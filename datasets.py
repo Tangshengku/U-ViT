@@ -397,7 +397,7 @@ class CelebA(DatasetFactory):
         transform = transforms.Compose([Crop(x1, x2, y1, y2), transforms.Resize(self.resolution),
                                         transforms.RandomHorizontalFlip(), transforms.ToTensor(),
                                         transforms.Normalize(0.5, 0.5)])
-        self.train = datasets.CelebA(root=path, split="train", target_type=[], transform=transform, download=True)
+        self.train = datasets.CelebA(root=path, split="train", target_type=[], transform=transform, download=False)
         self.train = UnlabeledDataset(self.train)
 
     @property

@@ -14,11 +14,11 @@ def get_config():
 
     config.train = d(
         n_steps=500000,
-        batch_size=128,
+        batch_size=256,
         mode='uncond',
-        log_interval=10,
-        eval_interval=5000,
-        save_interval=50000,
+        log_interval=100,
+        eval_interval=10000,
+        save_interval=10000,
     )
 
     config.optimizer = d(
@@ -55,9 +55,9 @@ def get_config():
     config.sample = d(
         sample_steps=1000,
         n_samples=50000,
-        mini_batch_size=500,
+        mini_batch_size=10,
         algorithm='euler_maruyama_sde',
-        path=''
+        path=""
     )
 
     return config

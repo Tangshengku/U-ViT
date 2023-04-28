@@ -4,6 +4,7 @@ import math
 from .timm import trunc_normal_, Mlp
 import einops
 import torch.utils.checkpoint
+from torchvision.utils import save_image
 
 if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
     ATTENTION_MODE = 'flash'
@@ -182,8 +183,11 @@ class UViT(nn.Module):
         self.decoder_pred = nn.Linear(embed_dim, self.patch_dim, bias=True)
         self.final_layer = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1) if conv else nn.Identity()
 
+        self.lte_classifer = nn.Linear(embed_dim, self.patch_dim)
+        self.lte_actn = nn.Sigmoid()
         trunc_normal_(self.pos_embed, std=.02)
         self.apply(self._init_weights)
+        # self.freeze_backbone()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -198,10 +202,47 @@ class UViT(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed'}
 
-    def forward(self, x, timesteps, y=None):
+    def freeze_backbone(self):
+        for (name, param) in self.named_parameters():
+            if "lte" in name:
+                print(name)
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+    def output_forward(self, x, L):
+        x = self.norm(x)
+        x = self.decoder_pred(x)
+        assert x.size(1) == self.extras + L
+        x = x[:, self.extras:, :]
+        x = unpatchify(x, self.in_chans)
+        x = self.final_layer(x)
+        return x
+
+    def lte(self, x, L):
+        assert x.size(1) == self.extras + L
+        x = x[:, self.extras:, :].detach()
+        x = self.lte_actn(self.lte_classifer(x))
+        x = unpatchify(x, self.in_chans)
+        save_uncertanty_figure = False
+        if save_uncertanty_figure:
+            path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/cifar10_uvit_small/default/uncertainty/"
+            import os
+            i = len(os.listdir(path))
+            # mask1 = x > 0.5
+            # mask2 = x < 0.5
+            x = x.mean(dim=1)
+            mask = torch.ones_like(x)
+            mask[x < 0.8] = 0
+            save_image(mask, path + "{}.png".format(i))
+        return x
+
+    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.9):
         x = self.patch_embed(x)
         B, L, D = x.shape
-
+        j = torch.tensor([0.0], device=x.device)
+        # j = 0
+        lte_val = 0
         time_token = self.time_embed(timestep_embedding(timesteps, self.embed_dim))
         time_token = time_token.unsqueeze(dim=1)
         x = torch.cat((time_token, x), dim=1)
@@ -212,19 +253,52 @@ class UViT(nn.Module):
         x = x + self.pos_embed
 
         skips = []
-        for blk in self.in_blocks:
+        inner_state = []
+        lte = []
+        for i, blk in enumerate(self.in_blocks):
             x = blk(x)
             skips.append(x)
-
+            inner_state.append(self.output_forward(x, L))
+            # inner_state.append(x.clone().contiguous())
+            lte_val = self.lte(x, L)
+            lte.append(lte_val)
+            # if layer != 13:
+            #     return self.output_forward(x, L), inner_state, lte, j+1
+            if not is_train:
+                # print(torch.mean(lte_val.view(-1)))
+                if torch.mean(lte_val.view(-1)) > thres:
+                    j += i 
+                    # print("return at in: {}".format(i))
+                    return self.output_forward(x, L), inner_state, lte, j+1
+        j += i + 1
         x = self.mid_block(x)
-
-        for blk in self.out_blocks:
+        inner_state.append(self.output_forward(x, L))
+        # inner_state.append(x.clone().contiguous())
+        lte_val = self.lte(x, L)
+        lte.append(lte_val)
+        if not is_train:
+                # print(torch.mean(lte_val.view(-1)))
+                if torch.mean(lte_val.view(-1)) > thres:
+                    # print("return at mid")
+                    j += 1 
+                    return self.output_forward(x, L), inner_state, lte, j+1
+        j += 1
+        for i, blk in enumerate(self.out_blocks):
             x = blk(x, skips.pop())
-
-        x = self.norm(x)
-        x = self.decoder_pred(x)
-        assert x.size(1) == self.extras + L
-        x = x[:, self.extras:, :]
-        x = unpatchify(x, self.in_chans)
-        x = self.final_layer(x)
-        return x
+            if i == len(self.out_blocks) - 1:
+                break
+            inner_state.append(self.output_forward(x, L))
+            # inner_state.append(x.clone().contiguous())
+            lte_val = self.lte(x, L)
+            lte.append(lte_val)
+            
+            if not is_train:
+                # print(torch.mean(lte_val.view(-1)))
+                if torch.mean(lte_val.view(-1)) > thres:
+                    # print(torch.mean(lte_val.view(-1)))
+                    j += i
+                    # print("return at out: {}".format(i))
+                    return self.output_forward(x, L), inner_state, lte, j+1
+        j += i + 1
+        x = self.output_forward(x, L)
+        return x, inner_state, lte, j

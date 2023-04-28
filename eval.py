@@ -41,8 +41,8 @@ def evaluate(config):
     if 'cfg' in config.sample and config.sample.cfg and config.sample.scale > 0:  # classifier free guidance
         logging.info(f'Use classifier free guidance with scale={config.sample.scale}')
         def cfg_nnet(x, timesteps, y):
-            _cond = nnet(x, timesteps, y=y)
-            _uncond = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device))
+            _cond, _, _ = nnet(x, timesteps, y=y)
+            _uncond, _, _ = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device))
             return _cond + config.sample.scale * (_cond - _uncond)
         score_model = sde.ScoreModel(cfg_nnet, pred=config.pred, sde=sde.VPSDE())
     else:

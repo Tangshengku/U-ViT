@@ -137,6 +137,11 @@ def initialize_train_state(config, device):
     nnet_ema.eval()
     logging.info(f'nnet has {cnt_params(nnet)} parameters')
 
+    nnet.load_state_dict(torch.load(
+        "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
+          map_location='cpu'), strict=False)
+    logging.info(f'nnet load checkpoints success!')
+
     optimizer = get_optimizer(params, **config.optimizer)
     lr_scheduler = get_lr_scheduler(optimizer, **config.lr_scheduler)
 
@@ -157,14 +162,35 @@ def sample2dir(accelerator, path, n_samples, mini_batch_size, sample_fn, unprepr
     os.makedirs(path, exist_ok=True)
     idx = 0
     batch_size = mini_batch_size * accelerator.num_processes
-
+    layer = torch.tensor([0.0])
+    l_all = np.zeros(1000)
+    simi_all = np.zeros(13)
     for _batch_size in tqdm(amortize(n_samples, batch_size), disable=not accelerator.is_main_process, desc='sample2dir'):
-        samples = unpreprocess_fn(sample_fn(mini_batch_size))
+        samples = sample_fn(mini_batch_size)
+        # l_all += np.array(l.cpu().numpy())
+        # simi_all += np.array(similarity.cpu().numpy())
+        samples = unpreprocess_fn(samples)
         samples = accelerator.gather(samples.contiguous())[:_batch_size]
+        # a = accelerator.gather(l)[:_batch_size].reshape(4, -1).cpu().sum(0).numpy()
+        # print(a.shape)
+        # l_all += 
+        # print(accelerator.gather(l.contiguous())[:_batch_size])
+        #.reshape(4, -1).cpu().sum(0).numpy()
         if accelerator.is_main_process:
             for sample in samples:
                 save_image(sample, os.path.join(path, f"{idx}.png"))
                 idx += 1
+        # layer += l
+    import matplotlib.pyplot as plt
+    l_all = l_all / 50000
+    # print(simi_all)
+    # simi_all = simi_all / np.sum(simi_all[:-1])
+    # print(simi_all)
+    # x = np.arange(13)
+    # plt.plot(x, simi_all)
+    # plt.savefig("simi_.png")
+    # print(l_all)
+    print("layer used:", l_all.mean())
 
 
 def grad_norm(model):

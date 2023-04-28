@@ -25,6 +25,31 @@ def stp(s, ts: torch.Tensor):  # scalar tensor product
 def mos(a, start_dim=1):  # mean of square
     return a.pow(2).flatten(start_dim=start_dim).mean(dim=-1)
 
+def mos_layer_wise(preds, ltes, noise):
+    loss = 0.0
+    layer = len(preds)
+    w = (layer + 1) * layer / 2
+    weights = torch.zeros(preds[0].shape[0], layer).to(preds[0].device)
+    for i, pred in enumerate(preds):
+        u_true = 1 - torch.tanh(torch.abs(pred - noise))
+        weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
+    # print(weights.sum(dim=-1).shape)
+    # print(weights.shape)
+    weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
+    for i, pred in enumerate(preds):
+        loss += (1 - weights[:, i]) * mos(noise - pred)
+    return loss
+
+def mos_lte(preds, ltes, noise):
+    loss = 0.0
+    layer = len(preds)
+    w = (layer + 1) * layer / 2
+    for i, pred in enumerate(preds):
+        u_true = 1 - torch.tanh(torch.abs(pred - noise))
+        loss += 1 / len(preds) * mos(ltes[i] - u_true)
+    return loss
+
+
 
 def duplicate(tensor, *size):
     return tensor.unsqueeze(dim=0).expand(*size, *tensor.shape)
@@ -174,14 +199,14 @@ class ScoreModel(object):
         return self.nnet(xt, t * 999, **kwargs)  # follow SDE
 
     def noise_pred(self, xt, t, **kwargs):
-        pred = self.predict(xt, t, **kwargs)
+        pred, u_pred, lte, i = self.predict(xt, t, **kwargs)
         if self.pred == 'noise_pred':
             noise_pred = pred
         elif self.pred == 'x0_pred':
             noise_pred = - stp(self.sde.snr(t).sqrt(), pred) + stp(self.sde.cum_beta(t).rsqrt(), xt)
         else:
             raise NotImplementedError
-        return noise_pred
+        return noise_pred, u_pred, lte, i
 
     def x0_pred(self, xt, t, **kwargs):
         pred = self.predict(xt, t, **kwargs)
@@ -195,8 +220,8 @@ class ScoreModel(object):
 
     def score(self, xt, t, **kwargs):
         cum_beta = self.sde.cum_beta(t)
-        noise_pred = self.noise_pred(xt, t, **kwargs)
-        return stp(-cum_beta.rsqrt(), noise_pred)
+        noise_pred, _, _, i = self.noise_pred(xt, t, **kwargs)
+        return stp(-cum_beta.rsqrt(), noise_pred), i
 
 
 class ReverseSDE(object):
@@ -210,8 +235,8 @@ class ReverseSDE(object):
     def drift(self, x, t, **kwargs):
         drift = self.sde.drift(x, t)  # f(x, t)
         diffusion = self.sde.diffusion(t)  # g(t)
-        score = self.score_model.score(x, t, **kwargs)
-        return drift - stp(diffusion ** 2, score)
+        score, i = self.score_model.score(x, t, **kwargs)
+        return drift - stp(diffusion ** 2, score), i
 
     def diffusion(self, t):
         return self.sde.diffusion(t)
@@ -229,8 +254,8 @@ class ODE(object):
     def drift(self, x, t, **kwargs):
         drift = self.sde.drift(x, t)  # f(x, t)
         diffusion = self.sde.diffusion(t)  # g(t)
-        score = self.score_model.score(x, t, **kwargs)
-        return drift - 0.5 * stp(diffusion ** 2, score)
+        score, i,  = self.score_model.score(x, t, **kwargs)
+        return drift - 0.5 * stp(diffusion ** 2, score), i 
 
     def diffusion(self, t):
         return 0
@@ -252,9 +277,24 @@ def euler_maruyama(rsde, x_init, sample_steps, eps=1e-3, T=1, trace=None, verbos
     timesteps = torch.tensor(timesteps).to(x_init)
     x = x_init
     if trace is not None:
-        trace.append(x)
+        trace.append(x) 
+    
+    import matplotlib.pyplot as plt
+    loss =  []
+    l = torch.tensor([0.0], device=x.device)
+    j = 0 
     for s, t in tqdm(list(zip(timesteps, timesteps[1:]))[::-1], disable=not verbose, desc='euler_maruyama'):
-        drift = rsde.drift(x, t, **kwargs)
+        # if j < 100:
+        #     kwargs["layer"] = 1
+        # else:
+        #     kwargs["layer"] = 13
+        j += 1
+        drift, i  = rsde.drift(x, t, **kwargs)
+        # kwargs["is_train"] = False
+        # drift2, i  = rsde.drift(x, t, **kwargs)
+        # loss.append(mos(drift-drift2).cpu().numpy()[0])
+        
+        l = torch.cat((l, i))
         diffusion = rsde.diffusion(t)
         dt = s - t
         mean = x + drift * dt
@@ -264,14 +304,23 @@ def euler_maruyama(rsde, x_init, sample_steps, eps=1e-3, T=1, trace=None, verbos
             trace.append(x)
         statistics = dict(s=s, t=t, sigma=sigma.item())
         logging.debug(dct2str(statistics))
+    # s = np.arange(0,1000)
+    # print(loss)
+    # plt.plot(s, loss)
+    # plt.plot(s, layer)
+    # plt.show()
+    # plt.savefig("6.png")
     return x
 
 
-def LSimple(score_model: ScoreModel, x0, pred='noise_pred', **kwargs):
+def LSimple(score_model: ScoreModel, x0, _step, pred='noise_pred', **kwargs):
     t, noise, xt = score_model.sde.sample(x0)
     if pred == 'noise_pred':
-        noise_pred = score_model.noise_pred(xt, t, **kwargs)
-        return mos(noise - noise_pred)
+        noise_pred, inner_pred, lte, i = score_model.noise_pred(xt, t, **kwargs)
+        if _step % 2 == 0:
+            return mos(noise - noise_pred) +  mos_layer_wise(inner_pred, lte, noise)
+        else:
+            return mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise)
     elif pred == 'x0_pred':
         x0_pred = score_model.x0_pred(xt, t, **kwargs)
         return mos(x0 - x0_pred)

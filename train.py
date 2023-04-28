@@ -17,6 +17,8 @@ from absl import logging
 import builtins
 import os
 import wandb
+from accelerate.utils import DistributedDataParallelKwargs
+
 
 
 def train(config):
@@ -25,7 +27,8 @@ def train(config):
         torch.backends.cudnn.deterministic = False
 
     mp.set_start_method('spawn')
-    accelerator = accelerate.Accelerator()
+    kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+    accelerator = accelerate.Accelerator(kwargs_handlers=[kwargs])
     device = accelerator.device
     accelerate.utils.set_seed(config.seed, device_specific=True)
     logging.info(f'Process {accelerator.process_index} using device: {device}')
@@ -56,6 +59,7 @@ def train(config):
                                       num_workers=8, pin_memory=True, persistent_workers=True)
 
     train_state = utils.initialize_train_state(config, device)
+    # layers=[name for name, x in train_state.nnet.named_parameters()]
     nnet, nnet_ema, optimizer, train_dataset_loader = accelerator.prepare(
         train_state.nnet, train_state.nnet_ema, train_state.optimizer, train_dataset_loader)
     lr_scheduler = train_state.lr_scheduler
@@ -74,13 +78,13 @@ def train(config):
     score_model_ema = sde.ScoreModel(nnet_ema, pred=config.pred, sde=sde.VPSDE())
 
 
-    def train_step(_batch):
+    def train_step(_batch, _step):
         _metrics = dict()
         optimizer.zero_grad()
         if config.train.mode == 'uncond':
-            loss = sde.LSimple(score_model, _batch, pred=config.pred)
+            loss = sde.LSimple(score_model, _batch, _step, pred=config.pred)
         elif config.train.mode == 'cond':
-            loss = sde.LSimple(score_model, _batch[0], pred=config.pred, y=_batch[1])
+            loss = sde.LSimple(score_model, _batch[0], _step, pred=config.pred, y=_batch[1])
         else:
             raise NotImplementedError(config.train.mode)
         _metrics['loss'] = accelerator.gather(loss.detach()).mean()
@@ -154,7 +158,7 @@ def train(config):
     while train_state.step < config.train.n_steps:
         nnet.train()
         batch = tree_map(lambda x: x.to(device), next(data_generator))
-        metrics = train_step(batch)
+        metrics = train_step(batch, train_state.step)
 
         nnet.eval()
         if accelerator.is_main_process and train_state.step % config.train.log_interval == 0:
