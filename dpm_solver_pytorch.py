@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import math
+from torchvision.utils import save_image
 
 
 count = 0
@@ -339,12 +340,12 @@ class DPM_Solver:
         layer = 0
         similarity = torch.zeros(13)
         thres = 0.9
-        # if  count < 80:
-        #     layer = 1
-        #     thres = 0.8
-        # else:
-        #     layer = 13
-        #     thres = 0.95
+        if  count < 25:
+            layer = 1
+            thres = 0.8
+        else:
+            layer = 13
+            thres = 0.95
         noise_s, inner_states, _, i = self.model_fn(x, s, layer, thres)
         # if count < 30:
         #     similarity += get_similarity(inner_states)
@@ -389,7 +390,7 @@ class DPM_Solver:
         j = 0.0
         global count
         layer = 0
-        if  count < 30:
+        if  count < 25:
             layer = 1
         else:
             layer = 13
@@ -400,7 +401,7 @@ class DPM_Solver:
                 torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
         )
-        if  count < 30:
+        if  count < 25:
             layer = 1
         else:
             layer = 13
@@ -456,24 +457,24 @@ class DPM_Solver:
         similarity = torch.zeros(13)
         global count
         layer = 0
-        # if  count < 80:
-        #     layer = 1
-        #     thres = 0.8
-        # else:
-        #     layer = 13
-        #     thres = 0.95
+        if  count < 25:
+            layer = 1
+            thres = 0.8
+        else:
+            layer = 13
+            thres = 0.95
         thres = 0.9
         if noise_s is None:
             noise_s, inner_states, _, i  = self.model_fn(x, s, layer, thres)
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        # if  count < 80:
-        #     layer = 1
-        #     thres = 0.8
-        # else:
-        #     layer = 13
-        #     thres = 0.95
+        if  count < 25:
+            layer = 1
+            thres = 0.8
+        else:
+            layer = 13
+            thres = 0.95
         if noise_s1 is None:
             x_s1 = (
                     torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
@@ -483,12 +484,12 @@ class DPM_Solver:
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        # if  count < 80:
-        #     layer = 1
-        #     thres = 0.8
-        # else:
-        #     layer = 13
-        #     thres = 0.95
+        if  count < 25:
+            layer = 1
+            thres = 0.8
+        else:
+            layer = 13
+            thres = 0.95
         if noise_s2 is None:
             x_s2 = (
                     torch.exp(log_alpha_s2 - log_alpha_s)[(...,) + (None,) * dims] * x
@@ -582,7 +583,7 @@ class DPM_Solver:
         return x
 
     def sample(self, x, steps=10, eps=1e-4, T=None, order=3, skip_type='logSNR',
-               adaptive_step_size=False, fast_version=True, atol=0.0078, rtol=0.05,
+               adaptive_step_size=False, fast_version=True, atol=0.0078, rtol=0.05, decode_fn=None
                ):
         """
         Compute the sample at time `eps` by DPM-Solver, given the initial `x` at time `T`.
@@ -664,8 +665,11 @@ class DPM_Solver:
                         device) * timesteps[i + 1]
                     x, j, similarity = self.dpm_solver_update(x, vec_s, vec_t, order)
                     l = torch.cat((l, j))
+                    # save_image(decode_fn(x), "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/img/" + "{}.png".format(17
+                                                                                                                    #  +i))
                     sim_all += similarity
                     global count
-                    if count == 100:
+                    if count >= 50:
+                        print("clear")
                         count = 0
         return x

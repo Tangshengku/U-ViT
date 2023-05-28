@@ -55,7 +55,7 @@ def get_config():
     config.sample = d(
         sample_steps=1000,
         n_samples=50000,
-        mini_batch_size=10,
+        mini_batch_size=2500,
         algorithm='euler_maruyama_sde',
         path=""
     )

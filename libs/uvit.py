@@ -219,29 +219,29 @@ class UViT(nn.Module):
         x = self.final_layer(x)
         return x
 
-    def lte(self, x, L):
+    def lte(self, x, L, save_uncertanty_figure=False):
         assert x.size(1) == self.extras + L
-        x = x[:, self.extras:, :].detach()
-        x = self.lte_actn(self.lte_classifer(x))
+        x = x[:, self.extras:, :]
+        x =  self.lte_actn(self.lte_classifer(x))
         x = unpatchify(x, self.in_chans)
-        save_uncertanty_figure = False
+        # save_uncertanty_figure = True
         if save_uncertanty_figure:
-            path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/cifar10_uvit_small/default/uncertainty/"
+            path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/celeba64_uvit_small/deediff/uncertainty/"
             import os
             i = len(os.listdir(path))
             # mask1 = x > 0.5
             # mask2 = x < 0.5
             x = x.mean(dim=1)
-            mask = torch.ones_like(x)
-            mask[x < 0.8] = 0
-            save_image(mask, path + "{}.png".format(i))
+            # mask = torch.ones_like(x)
+            # mask[x < 0.8] = 0
+            save_image(x, path + "{}.png".format(i))
         return x
 
-    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.9):
+    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.97):
         x = self.patch_embed(x)
         B, L, D = x.shape
-        j = torch.tensor([0.0], device=x.device)
-        # j = 0
+        # j = torch.tensor([0.0], device=x.device)
+        j = 0
         lte_val = 0
         time_token = self.time_embed(timestep_embedding(timesteps, self.embed_dim))
         time_token = time_token.unsqueeze(dim=1)
@@ -262,12 +262,14 @@ class UViT(nn.Module):
             # inner_state.append(x.clone().contiguous())
             lte_val = self.lte(x, L)
             lte.append(lte_val)
-            # if layer != 13:
+            # if i == layer - 1:
             #     return self.output_forward(x, L), inner_state, lte, j+1
             if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
                 if torch.mean(lte_val.view(-1)) > thres:
                     j += i 
+                    with open("layer.txt", "a") as f:
+                        f.write(str(j+1) + "\n")
                     # print("return at in: {}".format(i))
                     return self.output_forward(x, L), inner_state, lte, j+1
         j += i + 1
@@ -281,12 +283,16 @@ class UViT(nn.Module):
                 if torch.mean(lte_val.view(-1)) > thres:
                     # print("return at mid")
                     j += 1 
+                    with open("layer.txt", "a") as f:
+                        f.write(str(j+1) + "\n")
                     return self.output_forward(x, L), inner_state, lte, j+1
         j += 1
         for i, blk in enumerate(self.out_blocks):
             x = blk(x, skips.pop())
-            if i == len(self.out_blocks) - 1:
-                break
+            # if i == len(self.out_blocks) - 2:
+            #     self.lte(x, L, save_uncertanty_figure=True)
+            # if i == len(self.out_blocks) - 1:
+            #     break
             inner_state.append(self.output_forward(x, L))
             # inner_state.append(x.clone().contiguous())
             lte_val = self.lte(x, L)
@@ -297,8 +303,12 @@ class UViT(nn.Module):
                 if torch.mean(lte_val.view(-1)) > thres:
                     # print(torch.mean(lte_val.view(-1)))
                     j += i
+                    with open("layer.txt", "a") as f:
+                        f.write(str(j+1) + "\n")
                     # print("return at out: {}".format(i))
                     return self.output_forward(x, L), inner_state, lte, j+1
         j += i + 1
+        # with open("layer.txt", "a") as f:
+        #                 f.write(str(13) + "\n")
         x = self.output_forward(x, L)
         return x, inner_state, lte, j

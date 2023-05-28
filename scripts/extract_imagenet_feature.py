@@ -1,7 +1,9 @@
 import torch.nn as nn
 import numpy as np
 import torch
-from datasets import ImageNet
+import sys
+sys.path.append('..')
+from Datasets import ImageNet
 from torch.utils.data import DataLoader
 from libs.autoencoder import get_model
 import argparse
@@ -11,16 +13,16 @@ np.random.seed(0)
 
 
 def main(resolution=256):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('path')
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('path')
+    # args = parser.parse_args()
 
-    dataset = ImageNet(path=args.path, resolution=resolution, random_flip=False)
-    train_dataset = dataset.get_split(split='train', labeled=True)
+    dataset = ImageNet(path="/home/dongk/dkgroup/tsk/projects/data/imagenet", resolution=resolution, random_flip=False)
+    train_dataset = dataset.get_split(split='val', labeled=True)
     train_dataset_loader = DataLoader(train_dataset, batch_size=256, shuffle=False, drop_last=False,
                                       num_workers=8, pin_memory=True, persistent_workers=True)
 
-    model = get_model('assets/stable-diffusion/autoencoder_kl.pth')
+    model = get_model('/home/dongk/dkgroup/tsk/projects/U-ViT/assets/stabe-diffusion/autoencoder_kl.pth')
     model = nn.DataParallel(model)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model.to(device)
@@ -40,7 +42,7 @@ def main(resolution=256):
         label = label.detach().cpu().numpy()
 
         for moment, lb in zip(moments, label):
-            np.save(f'assets/datasets/imagenet{resolution}_features/{idx}.npy', (moment, lb))
+            np.save(f'/home/dongk/dkgroup/tsk/projects/U-ViT/assets/datasets/imagenet256_features/{idx}.npy', (moment, lb))
             idx += 1
 
     print(f'save {idx} files')

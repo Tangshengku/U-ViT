@@ -22,8 +22,8 @@ def get_config():
         batch_size=1024,
         mode='cond',
         log_interval=10,
-        eval_interval=5000,
-        save_interval=50000,
+        eval_interval=10000,
+        save_interval=10000,
     )
 
     config.optimizer = d(
@@ -61,10 +61,10 @@ def get_config():
     )
 
     config.sample = d(
-        sample_steps=50,
-        n_samples=50000,
-        mini_batch_size=50,  # the decoder is large
-        algorithm='dpm_solver',
+        sample_steps=1000,
+        n_samples=1,
+        mini_batch_size=1,  # the decoder is large
+        algorithm='euler_maruyama_sde',
         cfg=True,
         scale=0.4,
         path=''

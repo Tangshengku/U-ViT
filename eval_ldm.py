@@ -65,10 +65,10 @@ def evaluate(config):
 
     if 'cfg' in config.sample and config.sample.cfg and config.sample.scale > 0:  # classifier free guidance
         logging.info(f'Use classifier free guidance with scale={config.sample.scale}')
-        def cfg_nnet(x, timesteps, y):
-            _cond = nnet(x, timesteps, y=y)
-            _uncond = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device))
-            return _cond + config.sample.scale * (_cond - _uncond)
+        def cfg_nnet(x, timesteps, y, layer):
+            _cond, inner, inner1, i = nnet(x, timesteps, y=y, layer=layer)
+            _uncond, _, _, _ = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device), layer=layer)
+            return _cond + config.sample.scale * (_cond - _uncond), inner, inner1, i
         score_model = sde.ScoreModel(cfg_nnet, pred=config.pred, sde=sde.VPSDE())
     else:
         score_model = sde.ScoreModel(nnet, pred=config.pred, sde=sde.VPSDE())
@@ -105,6 +105,7 @@ def evaluate(config):
                 eps=1e-4,
                 adaptive_step_size=False,
                 fast_version=True,
+                decode_fn=decode_large_batch,
             )
         else:
             raise NotImplementedError

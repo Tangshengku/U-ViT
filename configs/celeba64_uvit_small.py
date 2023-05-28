@@ -17,7 +17,7 @@ def get_config():
         batch_size=256,
         mode='uncond',
         log_interval=100,
-        eval_interval=10000,
+        eval_interval=5000,
         save_interval=10000,
     )
 

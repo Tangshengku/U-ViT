@@ -87,15 +87,15 @@ def train(config):
     score_model_ema = sde.ScoreModel(nnet_ema, pred=config.pred, sde=sde.VPSDE())
 
 
-    def train_step(_batch):
+    def train_step(_batch, _step):
         _metrics = dict()
         optimizer.zero_grad()
         if config.train.mode == 'uncond':
             _z = autoencoder.sample(_batch) if 'feature' in config.dataset.name else encode(_batch)
-            loss = sde.LSimple(score_model, _z, pred=config.pred)
+            loss = sde.LSimple(score_model, _z, pred=config.pred, _step=_step)
         elif config.train.mode == 'cond':
             _z = autoencoder.sample(_batch[0]) if 'feature' in config.dataset.name else encode(_batch[0])
-            loss = sde.LSimple(score_model, _z, pred=config.pred, y=_batch[1])
+            loss = sde.LSimple(score_model, _z, pred=config.pred, y=_batch[1], _step=_step)
         else:
             raise NotImplementedError(config.train.mode)
         _metrics['loss'] = accelerator.gather(loss.detach()).mean()
@@ -168,7 +168,7 @@ def train(config):
     while train_state.step < config.train.n_steps:
         nnet.train()
         batch = tree_map(lambda x: x.to(device), next(data_generator))
-        metrics = train_step(batch)
+        metrics = train_step(batch, _step=train_state.step)
 
         nnet.eval()
         if accelerator.is_main_process and train_state.step % config.train.log_interval == 0:

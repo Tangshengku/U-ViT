@@ -137,10 +137,10 @@ def initialize_train_state(config, device):
     nnet_ema.eval()
     logging.info(f'nnet has {cnt_params(nnet)} parameters')
 
-    nnet.load_state_dict(torch.load(
-        "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
-          map_location='cpu'), strict=False)
-    logging.info(f'nnet load checkpoints success!')
+    # nnet.load_state_dict(torch.load(
+    #     "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
+    #       map_location='cpu'), strict=False)
+    # logging.info(f'nnet load checkpoints success!')
 
     optimizer = get_optimizer(params, **config.optimizer)
     lr_scheduler = get_lr_scheduler(optimizer, **config.lr_scheduler)
@@ -182,7 +182,7 @@ def sample2dir(accelerator, path, n_samples, mini_batch_size, sample_fn, unprepr
                 idx += 1
         # layer += l
     import matplotlib.pyplot as plt
-    l_all = l_all / 50000
+    l_all = l_all / 500
     # print(simi_all)
     # simi_all = simi_all / np.sum(simi_all[:-1])
     # print(simi_all)
