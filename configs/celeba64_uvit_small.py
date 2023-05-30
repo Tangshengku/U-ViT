@@ -13,8 +13,8 @@ def get_config():
     config.pred = 'noise_pred'
 
     config.train = d(
-        n_steps=500000,
-        batch_size=256,
+        n_steps=300000,
+        batch_size=512,
         mode='uncond',
         log_interval=100,
         eval_interval=5000,
@@ -23,7 +23,7 @@ def get_config():
 
     config.optimizer = d(
         name='adamw',
-        lr=0.0002,
+        lr=0.0004,
         weight_decay=0.03,
         betas=(0.99, 0.99),
     )

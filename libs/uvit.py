@@ -221,7 +221,7 @@ class UViT(nn.Module):
 
     def lte(self, x, L, save_uncertanty_figure=False):
         assert x.size(1) == self.extras + L
-        x = x[:, self.extras:, :]
+        x = x[:, self.extras:, :].detach()
         x =  self.lte_actn(self.lte_classifer(x))
         x = unpatchify(x, self.in_chans)
         # save_uncertanty_figure = True

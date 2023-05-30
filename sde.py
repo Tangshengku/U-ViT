@@ -22,8 +22,8 @@ def stp(s, ts: torch.Tensor):  # scalar tensor product
     return s.view(-1, *extra_dims) * ts
 
 
-def mos(a, log_sigma, start_dim=1):  # mean of square
-    return (2*log_sigma + (a / torch.exp(log_sigma)).pow(2)).flatten(start_dim=start_dim).mean(dim=-1)
+def mos(a, start_dim=1):  # mean of square
+    return a.pow(2).flatten(start_dim=start_dim).mean(dim=-1)
 
 def mos_layer_wise(preds, ltes, noise):
     loss = 0.0
@@ -33,10 +33,10 @@ def mos_layer_wise(preds, ltes, noise):
     for i, pred in enumerate(preds):
         u_true = 1 - torch.tanh(torch.abs(pred - noise))
         # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
-        weights[:, i] = torch.exp(ltes[i]).view(u_true.shape[0], -1).mean()
-    weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
+        weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
+    # weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
     for i, pred in enumerate(preds):
-        loss += (1 - weights[:, i])  * mos(noise - pred, ltes[i])
+        loss += weights[:, i]  * mos(noise - pred)
         # loss += 1 / (torch.abs((1 - weights[:, i]) - 0.1) + 0.001)  * mos(noise - pred)
     return loss
 
@@ -45,7 +45,7 @@ def mos_lte(preds, ltes, noise):
     layer = len(preds)
     w = (layer + 1) * layer / 2
     for i, pred in enumerate(preds):
-        u_true = 1 - torch.tanh(torch.abs(pred - noise))
+        u_true = 1 - torch.abs(pred - noise)
         loss += 1 / len(preds) * mos(ltes[i] - u_true)
     return loss
 
@@ -364,10 +364,10 @@ def LSimple(score_model: ScoreModel, x0, _step, pred='noise_pred', **kwargs):
         # with open("mse.txt", "w") as f:
         #     # for m in mse:
         #     f.writelines(mse)
-        # if _step % 2 == 0:
-        #     return mos(noise - noise_pred, lte[-1]) 
-        # else:
-        return mos(noise - noise_pred, lte[-1]) + mos_layer_wise(inner_pred, lte, noise)
+        if _step % 2 == 0:
+            return mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise)
+        else:
+            return mos(noise - noise_pred) + mos_layer_wise(inner_pred, lte, noise)
         # return mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise) + mos_layer_wise(inner_pred, lte, noise)
     elif pred == 'x0_pred':
         x0_pred = score_model.x0_pred(xt, t, **kwargs)
