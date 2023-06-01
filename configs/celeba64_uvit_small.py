@@ -13,17 +13,17 @@ def get_config():
     config.pred = 'noise_pred'
 
     config.train = d(
-        n_steps=300000,
-        batch_size=512,
+        n_steps=200000,
+        batch_size=1024,
         mode='uncond',
         log_interval=100,
         eval_interval=5000,
-        save_interval=10000,
+        save_interval=5000,
     )
 
     config.optimizer = d(
         name='adamw',
-        lr=0.0004,
+        lr=0.0001,
         weight_decay=0.03,
         betas=(0.99, 0.99),
     )
@@ -53,10 +53,10 @@ def get_config():
     )
 
     config.sample = d(
-        sample_steps=1000,
+        sample_steps=50,
         n_samples=50000,
-        mini_batch_size=2500,
-        algorithm='euler_maruyama_sde',
+        mini_batch_size=1250,
+        algorithm='dpm_solver',
         path=''
     )
 

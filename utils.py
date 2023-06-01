@@ -137,10 +137,10 @@ def initialize_train_state(config, device):
     nnet_ema.eval()
     logging.info(f'nnet has {cnt_params(nnet)} parameters')
 
-    # nnet.load_state_dict(torch.load(
-    #     "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
-    #       map_location='cpu'), strict=False)
-    # logging.info(f'nnet load checkpoints success!')
+    nnet.load_state_dict(torch.load(
+        "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
+          map_location='cpu'), strict=False)
+    logging.info(f'nnet load checkpoints success!')
 
     optimizer = get_optimizer(params, **config.optimizer)
     lr_scheduler = get_lr_scheduler(optimizer, **config.lr_scheduler)

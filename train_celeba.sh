@@ -9,4 +9,4 @@ config=configs/celeba64_uvit_small.py  # the training configuration
                                       # you can change other hyperparameters by modifying the configuration file
 
 # launch training
-accelerate launch --multi_gpu --num_processes $num_processes --mixed_precision fp16 $train_script --config=$config 
+accelerate launch --multi_gpu  --mixed_precision fp16 $train_script --config=$config 

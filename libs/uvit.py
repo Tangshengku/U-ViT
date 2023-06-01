@@ -183,8 +183,8 @@ class UViT(nn.Module):
         self.decoder_pred = nn.Linear(embed_dim, self.patch_dim, bias=True)
         self.final_layer = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1) if conv else nn.Identity()
 
-        self.lte_classifer = nn.Linear(embed_dim, self.patch_dim)
-        self.lte_actn = nn.Sigmoid()
+        self.lte_classifer = nn.Linear(embed_dim * num_patches, 2)
+        self.lte_actn = nn.Softmax(dim=1)
         trunc_normal_(self.pos_embed, std=.02)
         self.apply(self._init_weights)
         # self.freeze_backbone()
@@ -221,9 +221,9 @@ class UViT(nn.Module):
 
     def lte(self, x, L, save_uncertanty_figure=False):
         assert x.size(1) == self.extras + L
-        x = x[:, self.extras:, :].detach()
-        x =  self.lte_actn(self.lte_classifer(x))
-        x = unpatchify(x, self.in_chans)
+        x = x[:, self.extras:, :].float().detach()
+        x =  self.lte_actn(self.lte_classifer(x.view(x.shape[0], -1)))
+        # x = unpatchify(x, self.in_chans)
         # save_uncertanty_figure = True
         if save_uncertanty_figure:
             path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/celeba64_uvit_small/deediff/uncertainty/"

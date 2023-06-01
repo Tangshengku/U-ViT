@@ -30,14 +30,15 @@ def mos_layer_wise(preds, ltes, noise):
     layer = len(preds)
     w = (layer + 1) * layer / 2
     weights = torch.zeros(preds[0].shape[0], layer).to(preds[0].device)
-    for i, pred in enumerate(preds):
-        u_true = 1 - torch.tanh(torch.abs(pred - noise))
-        # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
-        weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
+    # for i, pred in enumerate(preds):
+    #     u_true = 1 - torch.tanh(torch.abs(pred - noise))
+    #     # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
+    #     weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
     # weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
     for i, pred in enumerate(preds):
-        loss += weights[:, i]  * mos(noise - pred)
+        loss += ltes[i][:, 0] * mos(noise - pred)
         # loss += 1 / (torch.abs((1 - weights[:, i]) - 0.1) + 0.001)  * mos(noise - pred)
+    # print("layer-wise loss:", weights)
     return loss
 
 def mos_lte(preds, ltes, noise):
@@ -45,8 +46,20 @@ def mos_lte(preds, ltes, noise):
     layer = len(preds)
     w = (layer + 1) * layer / 2
     for i, pred in enumerate(preds):
-        u_true = 1 - torch.abs(pred - noise)
-        loss += 1 / len(preds) * mos(ltes[i] - u_true)
+        # u_true = 1 - torch.abs(pred - noise)
+        # loss += 1 / len(preds) * mos(ltes[i] - u_true)
+        interval_ratio = (torch.abs(pred - noise) / noise).view(
+                                        pred.shape[0], -1).mean(1).unsqueeze(1)
+        interval_ratio = (interval_ratio < 0.1).clone().detach().half()
+        labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
+        pos_num = torch.count_nonzero(interval_ratio.view(-1))
+        neg_num = interval_ratio.shape[0] - pos_num
+
+        pos_weight = 1 - (pos_num / interval_ratio.shape[0])
+        neg_weight = 1 - (neg_num / interval_ratio.shape[0])
+        weight = torch.concat([pos_weight.view(-1), neg_weight.view(-1)], dim=0)
+        loss += torch.nn.functional.cross_entropy(ltes[i], labels, weight=weight)
+    # print("lte loss:", ltes[i])
     return loss
 
 def mos_normal_layer_wise(preds, ltes, noise):
