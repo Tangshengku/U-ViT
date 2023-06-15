@@ -340,13 +340,19 @@ class DPM_Solver:
         layer = 0
         similarity = torch.zeros(13)
         thres = 0.9
-        if  count < 25:
-            layer = 1
-            thres = 0.8
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
         else:
             layer = 13
             thres = 0.95
-        noise_s, inner_states, _, i = self.model_fn(x, s, layer, thres)
+        noise_s, inner_states, _, q, _, i = self.model_fn(x, s, layer, thres)
+        # print(q.item())
         # if count < 30:
         #     similarity += get_similarity(inner_states)
         count += 1
@@ -390,22 +396,38 @@ class DPM_Solver:
         j = 0.0
         global count
         layer = 0
-        if  count < 25:
-            layer = 1
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
+        # if 25<= count <= 30:
+        # #     layer = 2
         else:
             layer = 13
         if noise_s is None:
-            noise_s, _, _, i  = self.model_fn(x, s, layer, 1)
+            noise_s, _, _, q, _, i  = self.model_fn(x, s, layer, 1)
+            # print(q.item())
             count += 1
         x_s1 = (
                 torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
         )
-        if  count < 25:
-            layer = 1
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
         else:
             layer = 13
-        noise_s1, _, _, j  = self.model_fn(x_s1, s1, layer, 1)
+        noise_s1, _, _, q, _, j  = self.model_fn(x_s1, s1, layer, 1)
+        # print(q.item())
         count += 1
         x_t = (
                 torch.exp(log_alpha_t - log_alpha_s)[(...,) + (None,) * dims] * x
@@ -457,21 +479,33 @@ class DPM_Solver:
         similarity = torch.zeros(13)
         global count
         layer = 0
-        if  count < 25:
-            layer = 1
-            thres = 0.8
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
         else:
             layer = 13
             thres = 0.95
         thres = 0.9
         if noise_s is None:
-            noise_s, inner_states, _, i  = self.model_fn(x, s, layer, thres)
+            noise_s, inner_states, _, q, _, i  = self.model_fn(x, s, layer, thres)
+            # print(q.shape)
+            # print(q.item())
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        if  count < 25:
-            layer = 1
-            thres = 0.8
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
         else:
             layer = 13
             thres = 0.95
@@ -480,13 +514,19 @@ class DPM_Solver:
                     torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                     - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
             )
-            noise_s1, inner_states, _, i_1  = self.model_fn(x_s1, s1, layer, thres)
+            noise_s1, inner_states, _, q, _, i_1  = self.model_fn(x_s1, s1, layer, thres)
+            # print(q.item())
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        if  count < 25:
-            layer = 1
-            thres = 0.8
+        if  count < 21:
+            layer = 2
+        # elif  10 <= count < 15:
+        #     layer = 8
+        # elif  35 <= count < 40:
+        #     layer = 8
+        # elif  40 <= count:
+        #     layer = 1
         else:
             layer = 13
             thres = 0.95
@@ -496,7 +536,8 @@ class DPM_Solver:
                     - (sigma_s2 * phi_12)[(...,) + (None,) * dims] * noise_s
                     - r2 / r1 * (sigma_s2 * phi_22)[(...,) + (None,) * dims] * (noise_s1 - noise_s)
             )
-            noise_s2, inner_states, _, i_2  = self.model_fn(x_s2, s2, layer, thres)
+            noise_s2, inner_states, _, q, _, i_2  = self.model_fn(x_s2, s2, layer, thres)
+            # print(q.item())
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)

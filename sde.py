@@ -4,6 +4,7 @@ from absl import logging
 import numpy as np
 import math
 from tqdm import tqdm
+from pytorch_msssim import ssim
 
 
 def get_sde(name, **kwargs):
@@ -22,21 +23,31 @@ def stp(s, ts: torch.Tensor):  # scalar tensor product
     return s.view(-1, *extra_dims) * ts
 
 
-def mos(a, start_dim=1):  # mean of square
-    return a.pow(2).flatten(start_dim=start_dim).mean(dim=-1)
+def mos(a, start_dim=1, weight=None):  # mean of square
+    if weight != None:
+        return (weight*a).pow(2).flatten(start_dim=start_dim).mean(dim=-1)
+    else:
+        return a.pow(2).flatten(start_dim=start_dim).mean(dim=-1)
 
 def mos_layer_wise(preds, ltes, noise):
     loss = 0.0
     layer = len(preds)
     w = (layer + 1) * layer / 2
     weights = torch.zeros(preds[0].shape[0], layer).to(preds[0].device)
-    # for i, pred in enumerate(preds):
-    #     u_true = 1 - torch.tanh(torch.abs(pred - noise))
-    #     # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
-    #     weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
-    # weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
     for i, pred in enumerate(preds):
-        loss += ltes[i][:, 0] * mos(noise - pred)
+        u_true = 1 - torch.tanh(torch.abs(pred - noise))
+        # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
+        weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
+    weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
+    for i, pred in enumerate(preds):
+        # interval_ratio = (torch.abs(pred - noise) / torch.abs(noise)).view(
+        #                                 pred.shape[0], -1).mean(1).unsqueeze(1).clone().detach().float()
+        # interval_ratio = interval_ratio / interval_ratio.sum(0)
+        # interval_ratio = (interval_ratio < 0.5).clone().detach().half()
+        # labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
+        # print(ltes[i].shape)
+        # print(mos(noise - pred).shape)
+        loss +=   weights[:, i] * mos(noise - pred)
         # loss += 1 / (torch.abs((1 - weights[:, i]) - 0.1) + 0.001)  * mos(noise - pred)
     # print("layer-wise loss:", weights)
     return loss
@@ -46,21 +57,45 @@ def mos_lte(preds, ltes, noise):
     layer = len(preds)
     w = (layer + 1) * layer / 2
     for i, pred in enumerate(preds):
-        # u_true = 1 - torch.abs(pred - noise)
-        # loss += 1 / len(preds) * mos(ltes[i] - u_true)
-        interval_ratio = (torch.abs(pred - noise) / noise).view(
-                                        pred.shape[0], -1).mean(1).unsqueeze(1)
-        interval_ratio = (interval_ratio < 0.1).clone().detach().half()
-        labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
-        pos_num = torch.count_nonzero(interval_ratio.view(-1))
-        neg_num = interval_ratio.shape[0] - pos_num
+        u_true = 1 - torch.tanh(torch.abs(pred - noise)).detach()
+        loss += 1 / len(preds) * mos(ltes[i] - u_true)
+        # interval_ratio = (torch.abs(pred - noise) / noise).view(
+        #                                 pred.shape[0], -1).mean(1).unsqueeze(1)
+        # interval_ratio = (interval_ratio < 0.1).clone().detach().half()
+        # labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
+        # pos_num = torch.count_nonzero(interval_ratio.view(-1))
+        # neg_num = interval_ratio.shape[0] - pos_num
 
-        pos_weight = 1 - (pos_num / interval_ratio.shape[0])
-        neg_weight = 1 - (neg_num / interval_ratio.shape[0])
-        weight = torch.concat([pos_weight.view(-1), neg_weight.view(-1)], dim=0)
-        loss += torch.nn.functional.cross_entropy(ltes[i], labels, weight=weight)
+        # pos_weight = 1 - (pos_num / interval_ratio.shape[0])
+        # neg_weight = 1 - (neg_num / interval_ratio.shape[0])
+        # weight = torch.concat([pos_weight.view(-1), neg_weight.view(-1)], dim=0)
+        # loss += torch.nn.functional.cross_entropy(ltes[i], labels, weight=weight)
     # print("lte loss:", ltes[i])
     return loss
+
+def mos_local_lte(preds, ltes, global_ltes):
+    loss = 0.0
+    layer = len(preds)
+    w = (layer + 1) * layer / 2
+    for i, pred in enumerate(preds):
+        if i == len(preds) - 1:
+            break
+        u_true = 1 - torch.tanh(global_ltes[i].view(global_ltes[i].shape[0], -1).mean() * torch.abs(pred - preds[-1])).detach()
+        loss += 1 / len(preds) * mos(ltes[i] - u_true)
+        # interval_ratio = (torch.abs(pred - noise) / noise).view(
+        #                                 pred.shape[0], -1).mean(1).unsqueeze(1)
+        # interval_ratio = (interval_ratio < 0.1).clone().detach().half()
+        # labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
+        # pos_num = torch.count_nonzero(interval_ratio.view(-1))
+        # neg_num = interval_ratio.shape[0] - pos_num
+
+        # pos_weight = 1 - (pos_num / interval_ratio.shape[0])
+        # neg_weight = 1 - (neg_num / interval_ratio.shape[0])
+        # weight = torch.concat([pos_weight.view(-1), neg_weight.view(-1)], dim=0)
+        # loss += torch.nn.functional.cross_entropy(ltes[i], labels, weight=weight)
+    # print("lte loss:", ltes[i])
+    return loss
+
 
 def mos_normal_layer_wise(preds, ltes, noise):
     loss = 0.0
@@ -241,14 +276,17 @@ class ScoreModel(object):
         return self.nnet(xt, t * 999, **kwargs)  # follow SDE
 
     def noise_pred(self, xt, t, **kwargs):
-        pred, u_pred, lte, i = self.predict(xt, t, **kwargs)
+        kwargs["nsr"] = self.sde.nsr(t)
+        kwargs["cum_alpha"] = self.sde.cum_alpha(t).rsqrt()
+        pred, u_pred, quality, lte, i = self.predict(xt, t, **kwargs)
         if self.pred == 'noise_pred':
             noise_pred = pred
+            x_0 = stp(self.sde.cum_alpha(t).rsqrt(), xt) - stp(self.sde.nsr(t).sqrt(), pred)
         elif self.pred == 'x0_pred':
             noise_pred = - stp(self.sde.snr(t).sqrt(), pred) + stp(self.sde.cum_beta(t).rsqrt(), xt)
         else:
             raise NotImplementedError
-        return noise_pred, u_pred, lte, i
+        return noise_pred, u_pred, x_0, quality, lte, i
 
     def x0_pred(self, xt, t, **kwargs):
         pred = self.predict(xt, t, **kwargs)
@@ -262,7 +300,7 @@ class ScoreModel(object):
 
     def score(self, xt, t, **kwargs):
         cum_beta = self.sde.cum_beta(t)
-        noise_pred, inner_state, _, i = self.noise_pred(xt, t, **kwargs)
+        noise_pred, inner_state, _, _, _, i = self.noise_pred(xt, t, **kwargs)
         return stp(-cum_beta.rsqrt(), noise_pred), i, inner_state
 
 
@@ -296,7 +334,7 @@ class ODE(object):
     def drift(self, x, t, **kwargs):
         drift = self.sde.drift(x, t)  # f(x, t)
         diffusion = self.sde.diffusion(t)  # g(t)
-        score, i, _  = self.score_model.score(x, t, **kwargs)
+        score, i, _, = self.score_model.score(x, t, **kwargs)
         return drift - 0.5 * stp(diffusion ** 2, score), i 
 
     def diffusion(self, t):
@@ -371,17 +409,20 @@ def LSimple(score_model: ScoreModel, x0, _step, pred='noise_pred', **kwargs):
         # for i in range(1000):
         #     t, noise, xt = score_model.sde.sample(x0, t_init=i)
             # t = torch.tensor(i)
-        noise_pred, inner_pred, lte, _ = score_model.noise_pred(xt, t, **kwargs)
+        noise_pred, inner_pred, x_0, local_lte, lte, _ = score_model.noise_pred(xt, t, **kwargs)
+        ssim_value = ssim(x_0, x0, data_range=1, size_average=False)
+        # print(t.item(), "   ",  ssim_value.item())
         #     global mse
         #     mse.append(str(mos(noise - noise_pred).item())) 
         # with open("mse.txt", "w") as f:
         #     # for m in mse:
         #     f.writelines(mse)
-        if _step % 2 == 0:
-            return mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise)
-        else:
-            return mos(noise - noise_pred) + mos_layer_wise(inner_pred, lte, noise)
-        # return mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise) + mos_layer_wise(inner_pred, lte, noise)
+        # if _step % 2 == 0:
+        #     return  mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise)
+        # else:
+        #     return mos(noise - noise_pred) + mos_layer_wise(inner_pred, lte, noise)
+        # return mos_local_lte(inner_pred, local_lte, lte)
+        return ssim_value.detach() * (mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise) + mos_layer_wise(inner_pred, lte, noise))
     elif pred == 'x0_pred':
         x0_pred = score_model.x0_pred(xt, t, **kwargs)
         return mos(x0 - x0_pred)

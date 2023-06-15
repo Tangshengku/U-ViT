@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+import numpy as np
 from .timm import trunc_normal_, Mlp
 import einops
 import torch.utils.checkpoint
@@ -17,7 +18,13 @@ else:
         ATTENTION_MODE = 'math'
 print(f'attention mode is {ATTENTION_MODE}')
 
+def stp(s, ts: torch.Tensor):  # scalar tensor product
+    if isinstance(s, np.ndarray):
+        s = torch.from_numpy(s).type_as(ts)
+    extra_dims = (1,) * (ts.dim() - 1)
+    return s.view(-1, *extra_dims) * ts
 
+certainty = []
 def timestep_embedding(timesteps, dim, max_period=10000):
     """
     Create sinusoidal timestep embeddings.
@@ -135,6 +142,15 @@ class PatchEmbed(nn.Module):
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
+class LTE(nn.Module):
+    def __init__(self, embed_dim, patch_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.patch_dim = patch_dim
+        self.lte = nn.Linear(self.embed_dim, self.patch_dim)
+        self.actn = nn.Sigmoid()
+    def forward(self, x):
+        return self.actn(self.lte(x))
 
 class UViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
@@ -183,8 +199,18 @@ class UViT(nn.Module):
         self.decoder_pred = nn.Linear(embed_dim, self.patch_dim, bias=True)
         self.final_layer = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1) if conv else nn.Identity()
 
-        self.lte_classifer = nn.Linear(embed_dim * num_patches, 2)
-        self.lte_actn = nn.Softmax(dim=1)
+        # self.lte_classifer = nn.Linear(embed_dim * num_patches, 2)
+        # self.lte_actn = nn.Softmax(dim=1)
+        self.lte_classifer = nn.ModuleList([
+            LTE(embed_dim, self.patch_dim) for _ in range(depth + 1)
+        ])
+        # self.local_lte = nn.Linear(self.embed_dim, self.patch_dim)
+        # # self.quality_cov = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1)
+        # self.local_lte_actn = nn.Sigmoid()
+        # for _ in range(depth + 1):
+        #     self.lte_classifer.append(nn.Linear(embed_dim, self.patch_dim))
+        # self.lte_actn = nn.Sigmoid()
+        
         trunc_normal_(self.pos_embed, std=.02)
         self.apply(self._init_weights)
         # self.freeze_backbone()
@@ -204,7 +230,7 @@ class UViT(nn.Module):
 
     def freeze_backbone(self):
         for (name, param) in self.named_parameters():
-            if "lte" in name:
+            if "local" in name:
                 print(name)
                 param.requires_grad = True
             else:
@@ -219,11 +245,11 @@ class UViT(nn.Module):
         x = self.final_layer(x)
         return x
 
-    def lte(self, x, L, save_uncertanty_figure=False):
+    def lte(self, x, L, layer, save_uncertanty_figure=False):
         assert x.size(1) == self.extras + L
         x = x[:, self.extras:, :].float().detach()
-        x =  self.lte_actn(self.lte_classifer(x.view(x.shape[0], -1)))
-        # x = unpatchify(x, self.in_chans)
+        x =  self.lte_classifer[layer](x)
+        x = unpatchify(x, self.in_chans)
         # save_uncertanty_figure = True
         if save_uncertanty_figure:
             path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/celeba64_uvit_small/deediff/uncertainty/"
@@ -236,9 +262,29 @@ class UViT(nn.Module):
             # mask[x < 0.8] = 0
             save_image(x, path + "{}.png".format(i))
         return x
+    
+    # def local_lte_fn(self, x, L, layer, save_uncertanty_figure=False):
+    #     assert x.size(1) == self.extras + L
+    #     x = x[:, self.extras:, :].float().detach()
+    #     x =  self.local_lte_actn(self.local_lte(x))
+    #     x = unpatchify(x, self.in_chans)
+    #     # save_uncertanty_figure = True
+    #     if save_uncertanty_figure:
+    #         path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/celeba64_uvit_small/deediff/uncertainty/"
+    #         import os
+    #         i = len(os.listdir(path))
+    #         # mask1 = x > 0.5
+    #         # mask2 = x < 0.5
+    #         x = x.mean(dim=1)
+    #         # mask = torch.ones_like(x)
+    #         # mask[x < 0.8] = 0
+    #         save_image(x, path + "{}.png".format(i))
+    #     return x
 
-    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.97):
+    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.42, nsr=None, cum_alpha=None):
+        # x_clone = x.clone()
         x = self.patch_embed(x)
+        
         B, L, D = x.shape
         # j = torch.tensor([0.0], device=x.device)
         j = 0
@@ -255,18 +301,26 @@ class UViT(nn.Module):
         skips = []
         inner_state = []
         lte = []
+        local_lte = []
         for i, blk in enumerate(self.in_blocks):
             x = blk(x)
             skips.append(x)
             inner_state.append(self.output_forward(x, L))
             # inner_state.append(x.clone().contiguous())
-            lte_val = self.lte(x, L)
+            lte_val = self.lte(x, L, i)
             lte.append(lte_val)
+            # local_lte.append(self.local_lte_fn(x, L, i))
+            # if i == 0:
+            #     global certainty
+            #     certainty.append(torch.cosine_similarity(x, ))
+            #     print(certainty)
+                # print(torch.mean(lte_val.view(-1)).item())
             # if i == layer - 1:
-            #     return self.output_forward(x, L), inner_state, lte, j+1
+            #     return self.output_forward(x, L), inner_state, local_lte, lte, j+1
+            # print("layer {}: ".format(i+1), torch.mean(lte_val.view(-1)))
             if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > thres:
+                if torch.mean(lte_val.view(-1)) > 0.95:
                     j += i 
                     with open("layer.txt", "a") as f:
                         f.write(str(j+1) + "\n")
@@ -276,11 +330,14 @@ class UViT(nn.Module):
         x = self.mid_block(x)
         inner_state.append(self.output_forward(x, L))
         # inner_state.append(x.clone().contiguous())
-        lte_val = self.lte(x, L)
+        lte_val = self.lte(x, L, 6)
         lte.append(lte_val)
+        # local_lte.append(self.local_lte_fn(x, L, 6))
+
+        # print("layer {}: ".format(j+1), torch.mean(lte_val.view(-1)))
         if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > thres:
+                if torch.mean(lte_val.view(-1)) > 0.9:
                     # print("return at mid")
                     j += 1 
                     with open("layer.txt", "a") as f:
@@ -295,12 +352,21 @@ class UViT(nn.Module):
             #     break
             inner_state.append(self.output_forward(x, L))
             # inner_state.append(x.clone().contiguous())
-            lte_val = self.lte(x, L)
+            lte_val = self.lte(x, L, i + 7)
             lte.append(lte_val)
+            # if i==4:
+            #     global certainty
+            #     certainty.append(torch.mean(self.local_lte_fn(x, L, 6).view(-1)).item())
+            #     print(certainty)
+            # if i != len(self.out_blocks) - 1:
+            #     local_lte.append(self.local_lte_fn(x, L, i + 7))
             
+            # if i == layer - 8:
+            #     return self.output_forward(x, L), inner_state, local_lte, lte, j+1
+            # print("layer {}: ".format(i+7), torch.mean(lte_val.view(-1)))
             if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > thres:
+                if torch.mean(lte_val.view(-1)) > 0.9:
                     # print(torch.mean(lte_val.view(-1)))
                     j += i
                     with open("layer.txt", "a") as f:
@@ -308,7 +374,10 @@ class UViT(nn.Module):
                     # print("return at out: {}".format(i))
                     return self.output_forward(x, L), inner_state, lte, j+1
         j += i + 1
-        # with open("layer.txt", "a") as f:
-        #                 f.write(str(13) + "\n")
+        with open("layer.txt", "a") as f:
+                        f.write(str(13) + "\n")
         x = self.output_forward(x, L)
-        return x, inner_state, lte, j
+        # if nsr is not None and cum_alpha is not None:
+        #     quality = self.quality_actn(self.quality(x.view(x.shape[0], -1).detach()))
+        # print(quality)
+        return x, inner_state, local_lte, lte, j
