@@ -4,7 +4,7 @@ import math
 import numpy as np
 import torch.distributed as dist
 
-
+count = 0
 def interpolate_fn(x: torch.Tensor, xp: torch.Tensor, yp: torch.Tensor) -> torch.Tensor:
     """Performs piecewise linear interpolation for x, using xp and yp keypoints (knots).
     Performs separate interpolation for each channel.
@@ -309,7 +309,16 @@ class DPM_Solver:
     def model_fn(self, x, t):
         if self.predict_x0:
             alpha_t, sigma_t = self.noise_schedule.marginal_alpha(t), self.noise_schedule.marginal_std(t)
-            noise = self.model(x, t)
+            global count
+            if  count < 15:
+                layer = 2
+            elif count > 40:
+                layer = 2
+            else:
+                layer = 13
+                thres = 0.95
+            noise = self.model(x, t, layer)
+            count += 1
             dims = len(x.shape) - 1
             x0 = (x - sigma_t[(...,) + (None,)*dims] * noise) / alpha_t[(...,) + (None,)*dims]
             if self.thresholding:
@@ -430,11 +439,12 @@ class DPM_Solver:
         log_alpha_s, log_alpha_t = ns.marginal_log_mean_coeff(s), ns.marginal_log_mean_coeff(t)
         sigma_s, sigma_t = ns.marginal_std(s), ns.marginal_std(t)
         alpha_t = torch.exp(log_alpha_t)
-
+        
         if self.predict_x0:
             phi_1 = (torch.exp(-h) - 1.) / (-1.)
             if noise_s is None:
                 noise_s = self.model_fn(x, s)
+                # count += 1
             x_t = (
                 (sigma_t / sigma_s)[(...,) + (None,)*dims] * x
                 + (alpha_t * phi_1)[(...,) + (None,)*dims] * noise_s
@@ -447,6 +457,7 @@ class DPM_Solver:
             phi_1 = torch.expm1(h)
             if noise_s is None:
                 noise_s = self.model_fn(x, s)
+                # count += 1
             x_t = (
                 torch.exp(log_alpha_t - log_alpha_s)[(...,) + (None,)*dims] * x
                 - (sigma_t * phi_1)[(...,) + (None,)*dims] * noise_s
@@ -482,18 +493,36 @@ class DPM_Solver:
         log_alpha_s, log_alpha_s1, log_alpha_t = ns.marginal_log_mean_coeff(s), ns.marginal_log_mean_coeff(s1), ns.marginal_log_mean_coeff(t)
         sigma_s, sigma_s1, sigma_t = ns.marginal_std(s), ns.marginal_std(s1), ns.marginal_std(t)
         alpha_s1, alpha_t = torch.exp(log_alpha_s1), torch.exp(log_alpha_t)
-
+        # global count
+        # if  count < 15:
+        #     layer = 2
+        # elif count > 40:
+        #     layer = 2
+        # else:
+        #     layer = 13
+        #     thres = 0.95
         if self.predict_x0:
             phi_11 = torch.expm1(-r1 * h)
             phi_1 = torch.expm1(-h)
 
             if noise_s is None:
                 noise_s = self.model_fn(x, s)
+                
+                # count += 1
             x_s1 = (
                 (sigma_s1 / sigma_s)[(...,) + (None,)*dims] * x
                 - (alpha_s1 * phi_11)[(...,) + (None,)*dims] * noise_s
             )
+            # if  count < 15:
+            #     layer = 2
+            # elif count > 40:
+            #     layer = 2
+            # else:
+            #     layer = 13
+            #     thres = 0.95
             noise_s1 = self.model_fn(x_s1, s1)
+            
+            # count += 1
             if solver_type == 'dpm_solver':
                 x_t = (
                     (sigma_t / sigma_s)[(...,) + (None,)*dims] * x
@@ -648,7 +677,14 @@ class DPM_Solver:
         log_alpha_s, log_alpha_s1, log_alpha_s2, log_alpha_t = ns.marginal_log_mean_coeff(s), ns.marginal_log_mean_coeff(s1), ns.marginal_log_mean_coeff(s2), ns.marginal_log_mean_coeff(t)
         sigma_s, sigma_s1, sigma_s2, sigma_t = ns.marginal_std(s), ns.marginal_std(s1), ns.marginal_std(s2), ns.marginal_std(t)
         alpha_s1, alpha_s2, alpha_t = torch.exp(log_alpha_s1), torch.exp(log_alpha_s2), torch.exp(log_alpha_t)
-
+        # global count
+        # if  count < 15:
+        #     layer = 2
+        # elif count > 40:
+        #     layer = 2
+        # else:
+        #     layer = 13
+        #     thres = 0.95
         if self.predict_x0:
             phi_11 = torch.expm1(-r1 * h)
             phi_12 = torch.expm1(-r2 * h)
@@ -659,19 +695,39 @@ class DPM_Solver:
 
             if noise_s is None:
                 noise_s = self.model_fn(x, s)
+                # global count
+                # count += 1
             if noise_s1 is None:
                 x_s1 = (
                     (sigma_s1 / sigma_s)[(...,) + (None,)*dims] * x
                     - (alpha_s1 * phi_11)[(...,) + (None,)*dims] * noise_s
                 )
+                # if  count < 15:
+                #     layer = 2
+                # elif count > 40:
+                #     layer = 2
+                # else:
+                #     layer = 13
+                #     thres = 0.95
                 noise_s1 = self.model_fn(x_s1, s1)
+                # global count
+                # count += 1
             if noise_s2 is None:
                 x_s2 = (
                     (sigma_s2 / sigma_s)[(...,) + (None,)*dims] * x
                     - (alpha_s2 * phi_12)[(...,) + (None,)*dims] * noise_s
                     + r2 / r1 * (alpha_s2 * phi_22)[(...,) + (None,)*dims] * (noise_s1 - noise_s)
                 )
+                # if  count < 15:
+                #     layer = 2
+                # elif count > 40:
+                #     layer = 2
+                # else:
+                #     layer = 13
+                #     thres = 0.95
                 noise_s2 = self.model_fn(x_s2, s2)
+                # global count
+                # count += 1
             if solver_type == 'dpm_solver':
                 x_t = (
                     (sigma_t / sigma_s)[(...,) + (None,)*dims] * x
@@ -938,6 +994,10 @@ class DPM_Solver:
                     r2 = None if order <= 2 else (self.noise_schedule.marginal_lambda(timesteps[i + 2]) - self.noise_schedule.marginal_lambda(timesteps[i])) / h
                     x = self.dpm_solver_update(x, vec_s, vec_t, order, solver_type=solver_type, r1=r1, r2=r2)
                     i += order
+                    global count
+                    if count >= 50:
+                        print("clear")
+                        count = 0
         elif method == 'singlestep':
             N_steps = steps // order
             orders = [order,] * N_steps

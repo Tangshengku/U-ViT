@@ -138,7 +138,7 @@ def initialize_train_state(config, device):
     logging.info(f'nnet has {cnt_params(nnet)} parameters')
 
     nnet.load_state_dict(torch.load(
-        "/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/celeba_uvit_small.pth",
+        "/data/tsk/diff/ckpt/mscoco_uvit_small.pth",
           map_location='cpu'), strict=False)
     logging.info(f'nnet load checkpoints success!')
 
@@ -166,7 +166,7 @@ def sample2dir(accelerator, path, n_samples, mini_batch_size, sample_fn, unprepr
     l_all = np.zeros(1000)
     simi_all = np.zeros(13)
     for _batch_size in tqdm(amortize(n_samples, batch_size), disable=not accelerator.is_main_process, desc='sample2dir'):
-        samples = sample_fn(mini_batch_size)
+        samples, _context = sample_fn(mini_batch_size)
         # l_all += np.array(l.cpu().numpy())
         # simi_all += np.array(similarity.cpu().numpy())
         samples = unpreprocess_fn(samples)
@@ -176,6 +176,8 @@ def sample2dir(accelerator, path, n_samples, mini_batch_size, sample_fn, unprepr
         # l_all += 
         # print(accelerator.gather(l.contiguous())[:_batch_size])
         #.reshape(4, -1).cpu().sum(0).numpy()
+        print(samples.shape)
+        print(_context.shape)
         if accelerator.is_main_process:
             for sample in samples:
                 save_image(sample, os.path.join(path, f"{idx}.png"))

@@ -150,7 +150,7 @@ class LTE(nn.Module):
         self.lte = nn.Linear(self.embed_dim, self.patch_dim)
         self.actn = nn.Sigmoid()
     def forward(self, x):
-        return self.actn(self.lte(x))
+        return self.actn(self.lte(x).float())
 
 class UViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
@@ -281,7 +281,7 @@ class UViT(nn.Module):
     #         save_image(x, path + "{}.png".format(i))
     #     return x
 
-    def forward(self, x, timesteps, y=None, is_train=True, layer=13, thres=0.42, nsr=None, cum_alpha=None):
+    def forward(self, x, timesteps, y=None, is_train=False, layer=13, thres=0.95, nsr=None, cum_alpha=None):
         # x_clone = x.clone()
         x = self.patch_embed(x)
         
@@ -302,6 +302,7 @@ class UViT(nn.Module):
         inner_state = []
         lte = []
         local_lte = []
+        patient = [0]
         for i, blk in enumerate(self.in_blocks):
             x = blk(x)
             skips.append(x)
@@ -320,12 +321,14 @@ class UViT(nn.Module):
             # print("layer {}: ".format(i+1), torch.mean(lte_val.view(-1)))
             if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > 0.95:
-                    j += i 
-                    with open("layer.txt", "a") as f:
-                        f.write(str(j+1) + "\n")
-                    # print("return at in: {}".format(i))
-                    return self.output_forward(x, L), inner_state, lte, j+1
+                if torch.mean(lte_val.view(-1)) > thres:
+                    if patient[-1] == 1 :
+                        j += i 
+                        with open("layer.txt", "a") as f:
+                            f.write(str(j+1) + "\n")
+                        # print("return at in: {}".format(i))
+                        return self.output_forward(x, L), inner_state, local_lte, lte, j+1
+                    patient.append(1)
         j += i + 1
         x = self.mid_block(x)
         inner_state.append(self.output_forward(x, L))
@@ -337,12 +340,12 @@ class UViT(nn.Module):
         # print("layer {}: ".format(j+1), torch.mean(lte_val.view(-1)))
         if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > 0.9:
+                if torch.mean(lte_val.view(-1)) > thres:
                     # print("return at mid")
                     j += 1 
                     with open("layer.txt", "a") as f:
                         f.write(str(j+1) + "\n")
-                    return self.output_forward(x, L), inner_state, lte, j+1
+                    return self.output_forward(x, L), inner_state, local_lte, lte, j+1
         j += 1
         for i, blk in enumerate(self.out_blocks):
             x = blk(x, skips.pop())
@@ -366,13 +369,13 @@ class UViT(nn.Module):
             # print("layer {}: ".format(i+7), torch.mean(lte_val.view(-1)))
             if not is_train:
                 # print(torch.mean(lte_val.view(-1)))
-                if torch.mean(lte_val.view(-1)) > 0.9:
+                if torch.mean(lte_val.view(-1)) > thres:
                     # print(torch.mean(lte_val.view(-1)))
                     j += i
                     with open("layer.txt", "a") as f:
                         f.write(str(j+1) + "\n")
                     # print("return at out: {}".format(i))
-                    return self.output_forward(x, L), inner_state, lte, j+1
+                    return self.output_forward(x, L), inner_state, local_lte, lte, j+1
         j += i + 1
         with open("layer.txt", "a") as f:
                         f.write(str(13) + "\n")

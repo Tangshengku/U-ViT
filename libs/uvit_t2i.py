@@ -134,6 +134,16 @@ class PatchEmbed(nn.Module):
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
+class LTE(nn.Module):
+    def __init__(self, embed_dim, patch_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.patch_dim = patch_dim
+        self.lte = nn.Linear(self.embed_dim, self.patch_dim)
+        self.actn = nn.Sigmoid()
+    def forward(self, x):
+        return self.actn(self.lte(x).float())
+
 
 class UViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
@@ -179,6 +189,10 @@ class UViT(nn.Module):
         self.decoder_pred = nn.Linear(embed_dim, self.patch_dim, bias=True)
         self.final_layer = nn.Conv2d(self.in_chans, self.in_chans, 3, padding=1) if conv else nn.Identity()
 
+        self.lte_classifer = nn.ModuleList([
+            LTE(embed_dim, self.patch_dim) for _ in range(depth + 1)
+        ])
+
         trunc_normal_(self.pos_embed, std=.02)
         self.apply(self._init_weights)
 
@@ -195,7 +209,34 @@ class UViT(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed'}
 
-    def forward(self, x, timesteps, context):
+    def output_forward(self, x, L):
+        x = self.norm(x)
+        x = self.decoder_pred(x)
+        assert x.size(1) == self.extras + L
+        x = x[:, self.extras:, :]
+        x = unpatchify(x, self.in_chans)
+        x = self.final_layer(x)
+        return x
+
+    def lte(self, x, L, layer, save_uncertanty_figure=False):
+        assert x.size(1) == self.extras + L
+        x = x[:, self.extras:, :].float().detach()
+        x =  self.lte_classifer[layer](x)
+        x = unpatchify(x, self.in_chans)
+        # save_uncertanty_figure = True
+        if save_uncertanty_figure:
+            path = "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/celeba64_uvit_small/deediff/uncertainty/"
+            import os
+            i = len(os.listdir(path))
+            # mask1 = x > 0.5
+            # mask2 = x < 0.5
+            x = x.mean(dim=1)
+            # mask = torch.ones_like(x)
+            # mask[x < 0.8] = 0
+            save_image(x, path + "{}.png".format(i))
+        return x
+    
+    def forward(self, x, timesteps, context, is_train=True, layer=13, thres=0.8):
         x = self.patch_embed(x)
         B, L, D = x.shape
 
@@ -205,20 +246,62 @@ class UViT(nn.Module):
         x = torch.cat((time_token, context_token, x), dim=1)
         x = x + self.pos_embed
 
+        j = 0
         skips = []
-        for blk in self.in_blocks:
+        inner_state = []
+        lte = []
+        patient = [0]
+        for i, blk in enumerate(self.in_blocks):
             x = blk(x)
             skips.append(x)
+            inner_state.append(self.output_forward(x, L))
+            lte_val = self.lte(x, L, i)
+            lte.append(lte_val)
+            # print(layer)
+            # if i == layer - 1:
+            #     return self.output_forward(x, L), inner_state, lte, j+1
+            
+            if not is_train:
+                # print(torch.mean(lte_val.view(-1)))
+                if torch.mean(lte_val.view(-1)) > thres:
+                    # if patient[-1] == 1 :
+                    j += i 
+                    with open("layer.txt", "a") as f:
+                        f.write(str(j+1) + "\n")
+                    return self.output_forward(x, L), inner_state, lte, j+1
+                    # patient.append(1)
 
         x = self.mid_block(x)
+        inner_state.append(self.output_forward(x, L))
+        lte_val = self.lte(x, L, 6)
+        lte.append(lte_val)
+        
+        if not is_train:
+            if torch.mean(lte_val.view(-1)) > thres:
+                # if patient[-1] == 1 :
+                j += 1
+                with open("layer.txt", "a") as f:
+                    f.write(str(j+1) + "\n")
+                return self.output_forward(x, L), inner_state, lte, j+1
+                # patient.append(1)
 
-        for blk in self.out_blocks:
+        for i, blk in enumerate(self.out_blocks):
             x = blk(x, skips.pop())
+            inner_state.append(self.output_forward(x, L))
+            lte_val = self.lte(x, L, i + 7)
+            lte.append(lte_val)
+            
+            if not is_train:
+                if torch.mean(lte_val.view(-1)) > thres:
+                    # if patient[-1] == 1:
+                    j += i 
+                    with open("layer.txt", "a") as f:
+                        f.write(str(j+1) + "\n")
+                    return self.output_forward(x, L), inner_state, lte, j+1
+                    # patient.append(1)
 
-        x = self.norm(x)
-        x = self.decoder_pred(x)
-        assert x.size(1) == self.extras + L
-        x = x[:, self.extras:, :]
-        x = unpatchify(x, self.in_chans)
-        x = self.final_layer(x)
-        return x
+        j += i + 1
+        # with open("layer.txt", "a") as f:
+        #                 f.write(str(13) + "\n")
+        x = self.output_forward(x, L)
+        return x, inner_state, lte, j

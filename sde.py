@@ -365,12 +365,14 @@ def euler_maruyama(rsde, x_init, sample_steps, eps=1e-3, T=1, trace=None, verbos
     j = 0
     error = np.zeros(20)
     for s, t in tqdm(list(zip(timesteps, timesteps[1:]))[::-1], disable=not verbose, desc='euler_maruyama'):
-        if j <= 200:
+        if j <= 500:
             kwargs["layer"] = 1
-        elif 200 < j <= 400 :
-            kwargs["layer"] = 3
-        elif 400 < j < 600 :
-            kwargs["layer"] = 6
+        # elif 200 < j <= 300 :
+        #     kwargs["layer"] = 8
+        # elif 700 < j < 800 :
+        #     kwargs["layer"] = 8
+        # elif 900 < j  :
+        #     kwargs["layer"] = 2
         else:
             kwargs["layer"] = 13
         
@@ -422,7 +424,7 @@ def LSimple(score_model: ScoreModel, x0, _step, pred='noise_pred', **kwargs):
         # else:
         #     return mos(noise - noise_pred) + mos_layer_wise(inner_pred, lte, noise)
         # return mos_local_lte(inner_pred, local_lte, lte)
-        return ssim_value.detach() * (mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise) + mos_layer_wise(inner_pred, lte, noise))
+        return  mos(noise - noise_pred) + mos_lte(inner_pred, lte, noise) + mos_layer_wise(inner_pred, lte, noise)
     elif pred == 'x0_pred':
         x0_pred = score_model.x0_pred(xt, t, **kwargs)
         return mos(x0 - x0_pred)

@@ -20,9 +20,9 @@ def get_config():
     config.train = d(
         n_steps=1000000,
         batch_size=256,
-        log_interval=10,
-        eval_interval=5000,
-        save_interval=50000,
+        log_interval=100,
+        eval_interval=10000,
+        save_interval=10000,
     )
 
     config.optimizer = d(
@@ -54,18 +54,18 @@ def get_config():
 
     config.dataset = d(
         name='mscoco256_features',
-        path='assets/datasets/coco256_features',
+        path='/data/tsk/diff/coco256_features',
         cfg=True,
         p_uncond=0.1
     )
 
     config.sample = d(
         sample_steps=50,
-        n_samples=30000,
-        mini_batch_size=50,
+        n_samples=50000,
+        mini_batch_size=100,
         cfg=True,
         scale=1.,
-        path=''
+        path='/data/tsk/diff/workdir/mscoco_uvit_small/default/ckpts/330000.ckpt/images'
     )
 
     return config

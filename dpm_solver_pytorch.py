@@ -340,14 +340,14 @@ class DPM_Solver:
         layer = 0
         similarity = torch.zeros(13)
         thres = 0.9
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
+        #     layer = 2
         else:
             layer = 13
             thres = 0.95
@@ -363,7 +363,7 @@ class DPM_Solver:
         if return_noise:
             return x_t, {'noise_s': noise_s}
         else:
-            return x_t, torch.tensor(i, device=x_t.device), similarity
+            return x_t, torch.tensor([i, 13], device=x_t.device), 0
 
     def dpm_solver_second_update(self, x, s, t, r1=0.5, noise_s=None, return_noise=False):
         """
@@ -396,14 +396,14 @@ class DPM_Solver:
         j = 0.0
         global count
         layer = 0
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
+        #     layer = 2
         # if 25<= count <= 30:
         # #     layer = 2
         else:
@@ -416,16 +416,16 @@ class DPM_Solver:
                 torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
         )
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
-        else:
-            layer = 13
+        #     layer = 2
+        # else:
+        #     layer = 13
         noise_s1, _, _, q, _, j  = self.model_fn(x_s1, s1, layer, 1)
         # print(q.item())
         count += 1
@@ -479,14 +479,14 @@ class DPM_Solver:
         similarity = torch.zeros(13)
         global count
         layer = 0
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
+        #     layer = 2
         else:
             layer = 13
             thres = 0.95
@@ -498,14 +498,14 @@ class DPM_Solver:
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
+        #     layer = 2
         else:
             layer = 13
             thres = 0.95
@@ -519,14 +519,14 @@ class DPM_Solver:
             count += 1
         # if count < 30:
         #     similarity += get_similarity(inner_states)
-        if  count < 21:
+        if  count < 10:
             layer = 2
         # elif  10 <= count < 15:
         #     layer = 8
         # elif  35 <= count < 40:
         #     layer = 8
         # elif  40 <= count:
-        #     layer = 1
+        #     layer = 2
         else:
             layer = 13
             thres = 0.95
@@ -710,7 +710,7 @@ class DPM_Solver:
                                                                                                                     #  +i))
                     sim_all += similarity
                     global count
-                    if count >= 50:
+                    if count >= 100:
                         print("clear")
                         count = 0
         return x

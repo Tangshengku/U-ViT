@@ -14,7 +14,7 @@ def get_config():
 
     config.train = d(
         n_steps=200000,
-        batch_size=1024,
+        batch_size=512,
         mode='uncond',
         log_interval=100,
         eval_interval=5000,
@@ -23,7 +23,7 @@ def get_config():
 
     config.optimizer = d(
         name='adamw',
-        lr=0.0008,
+        lr=0.0004,
         weight_decay=0.03,
         betas=(0.99, 0.999),
     )
@@ -53,10 +53,10 @@ def get_config():
     )
 
     config.sample = d(
-        sample_steps=50,
+        sample_steps=1000,
         n_samples=50000,
         mini_batch_size=1250,
-        algorithm='dpm_solver',
+        algorithm='euler_maruyama_sde',
         path=""
     )
 
