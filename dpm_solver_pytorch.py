@@ -213,12 +213,10 @@ def model_wrapper(model, noise_schedule=None, is_cond_classifier=False, classifi
             selected = log_probs[range(len(logits)), y.view(-1)]
             return classifier_scale * torch.autograd.grad(selected.sum(), x_in)[0]
 
-    def model_fn(x, t_continuous, layer, thres):
+    def model_fn(x, t_continuous):
         """
         The noise predicition model function that is used for DPM-Solver.
         """
-        model_kwargs["layer"] = layer
-        model_kwargs["thres"] = thres
         if is_cond_classifier:
             y = model_kwargs.get("y", None)
             if y is None:
@@ -336,26 +334,8 @@ class DPM_Solver:
         sigma_t = ns.marginal_std(t)
 
         phi_1 = torch.expm1(h)
-        global count
-        layer = 0
-        similarity = torch.zeros(13)
-        thres = 0.9
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        else:
-            layer = 13
-            thres = 0.95
-        noise_s, inner_states, _, q, _, i = self.model_fn(x, s, layer, thres)
-        # print(q.item())
-        # if count < 30:
-        #     similarity += get_similarity(inner_states)
-        count += 1
+        
+        noise_s, inner_states, _, = self.model_fn(x, s)
         x_t = (
                 torch.exp(log_alpha_t - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_t * phi_1)[(...,) + (None,) * dims] * noise_s
@@ -363,7 +343,7 @@ class DPM_Solver:
         if return_noise:
             return x_t, {'noise_s': noise_s}
         else:
-            return x_t, torch.tensor([i, 13], device=x_t.device), 0
+            return x_t
 
     def dpm_solver_second_update(self, x, s, t, r1=0.5, noise_s=None, return_noise=False):
         """
@@ -392,43 +372,17 @@ class DPM_Solver:
 
         phi_11 = torch.expm1(r1 * h)
         phi_1 = torch.expm1(h)
-        i = 0.0
-        j = 0.0
-        global count
-        layer = 0
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        # if 25<= count <= 30:
-        # #     layer = 2
-        else:
-            layer = 13
+    
         if noise_s is None:
-            noise_s, _, _, q, _, i  = self.model_fn(x, s, layer, 1)
-            # print(q.item())
-            count += 1
+            noise_s, _, _,   = self.model_fn(x, s)
+
         x_s1 = (
                 torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
         )
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        # else:
-        #     layer = 13
-        noise_s1, _, _, q, _, j  = self.model_fn(x_s1, s1, layer, 1)
-        # print(q.item())
-        count += 1
+    
+        noise_s1, _, _,   = self.model_fn(x_s1, s1)
+    
         x_t = (
                 torch.exp(log_alpha_t - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_t * phi_1)[(...,) + (None,) * dims] * noise_s
@@ -437,7 +391,7 @@ class DPM_Solver:
         if return_noise:
             return x_t, {'noise_s': noise_s, 'noise_s1': noise_s1}
         else:
-            return x_t, torch.tensor([i, j], device=x_t.device), 0
+            return x_t
 
     def dpm_solver_third_update(self, x, s, t, r1=1. / 3., r2=2. / 3., noise_s=None, noise_s1=None, noise_s2=None):
         """
@@ -473,80 +427,29 @@ class DPM_Solver:
         phi_1 = torch.expm1(h)
         phi_22 = torch.expm1(r2 * h) / (r2 * h) - 1.
         phi_2 = torch.expm1(h) / h - 1.
-        i = 0.0
-        i_1 = 0.0
-        i_2 = 0.0
-        similarity = torch.zeros(13)
-        global count
-        layer = 0
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        else:
-            layer = 13
-            thres = 0.95
-        thres = 0.9
         if noise_s is None:
-            noise_s, inner_states, _, q, _, i  = self.model_fn(x, s, layer, thres)
-            # print(q.shape)
-            # print(q.item())
-            count += 1
-        # if count < 30:
-        #     similarity += get_similarity(inner_states)
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        else:
-            layer = 13
-            thres = 0.95
+            noise_s, inner_states, _, = self.model_fn(x, s)
+
         if noise_s1 is None:
             x_s1 = (
                     torch.exp(log_alpha_s1 - log_alpha_s)[(...,) + (None,) * dims] * x
                     - (sigma_s1 * phi_11)[(...,) + (None,) * dims] * noise_s
             )
-            noise_s1, inner_states, _, q, _, i_1  = self.model_fn(x_s1, s1, layer, thres)
-            # print(q.item())
-            count += 1
-        # if count < 30:
-        #     similarity += get_similarity(inner_states)
-        if  count < 10:
-            layer = 2
-        # elif  10 <= count < 15:
-        #     layer = 8
-        # elif  35 <= count < 40:
-        #     layer = 8
-        # elif  40 <= count:
-        #     layer = 2
-        else:
-            layer = 13
-            thres = 0.95
+            noise_s1, inner_states, _,  = self.model_fn(x_s1, s1)
+
         if noise_s2 is None:
             x_s2 = (
                     torch.exp(log_alpha_s2 - log_alpha_s)[(...,) + (None,) * dims] * x
                     - (sigma_s2 * phi_12)[(...,) + (None,) * dims] * noise_s
                     - r2 / r1 * (sigma_s2 * phi_22)[(...,) + (None,) * dims] * (noise_s1 - noise_s)
             )
-            noise_s2, inner_states, _, q, _, i_2  = self.model_fn(x_s2, s2, layer, thres)
-            # print(q.item())
-            count += 1
-        # if count < 30:
-        #     similarity += get_similarity(inner_states)
+            noise_s2, inner_states, _,   = self.model_fn(x_s2, s2)
         x_t = (
                 torch.exp(log_alpha_t - log_alpha_s)[(...,) + (None,) * dims] * x
                 - (sigma_t * phi_1)[(...,) + (None,) * dims] * noise_s
                 - (1. / r2) * (sigma_t * phi_2)[(...,) + (None,) * dims] * (noise_s2 - noise_s)
         )
-        return x_t, torch.tensor([i, i_1, i_2], device=x_t.device), similarity
+        return x_t
 
     def dpm_solver_update(self, x, s, t, order):
         """
@@ -698,19 +601,9 @@ class DPM_Solver:
                 N_steps = steps // order
                 orders = [order, ] * N_steps
                 timesteps = self.get_time_steps(skip_type=skip_type, t_T=t_T, t_0=t_0, N=N_steps, device=device)
-            l = torch.tensor([0.0], device=x.device)
-            sim_all = torch.zeros(13)
             with torch.no_grad():
                 for i, order in enumerate(orders):
                     vec_s, vec_t = torch.ones((x.shape[0],)).to(device) * timesteps[i], torch.ones((x.shape[0],)).to(
                         device) * timesteps[i + 1]
-                    x, j, similarity = self.dpm_solver_update(x, vec_s, vec_t, order)
-                    l = torch.cat((l, j))
-                    # save_image(decode_fn(x), "/home/dongk/dkgroup/tsk/projects/U-ViT/workdir/img/" + "{}.png".format(17
-                                                                                                                    #  +i))
-                    sim_all += similarity
-                    global count
-                    if count >= 100:
-                        print("clear")
-                        count = 0
+                    x = self.dpm_solver_update(x, vec_s, vec_t, order)
         return x

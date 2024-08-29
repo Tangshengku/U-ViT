@@ -71,13 +71,13 @@ def evaluate(config):
 
     if 'cfg' in config.sample and config.sample.cfg and config.sample.scale > 0:  # classifier free guidance
         logging.info(f'Use classifier free guidance with scale={config.sample.scale}')
-        def cfg_nnet(x, timesteps, y):
-            _cond = nnet(x, timesteps, y=y)
-            _uncond = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device))
+        def cfg_nnet(x, timesteps, y, thres):
+            _cond = nnet(x, timesteps, y=y, thres=thres)
+            _uncond = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device), thres=thres)
             return _cond + config.sample.scale * (_cond - _uncond)
     else:
-        def cfg_nnet(x, timesteps, y):
-            _cond = nnet(x, timesteps, y=y)
+        def cfg_nnet(x, timesteps, y, thres):
+            _cond = nnet(x, timesteps, y=y, thres=thres)
             return _cond
 
     logging.info(config.sample)
@@ -113,6 +113,9 @@ def evaluate(config):
             kwargs = dict(y=dataset.sample_label(_n_samples, device=device))
         else:
             raise NotImplementedError
+
+        kwargs["thres"] = config.exit_threshold
+
         _z = sample_z(_n_samples, _sample_steps=config.sample.sample_steps, **kwargs)
         return decode_large_batch(_z)
 
@@ -145,6 +148,7 @@ def main(argv):
     config = FLAGS.config
     config.nnet_path = FLAGS.nnet_path
     config.output_path = FLAGS.output_path
+    config.exit_threshold = FLAGS.exit_threshold
     evaluate(config)
 
 

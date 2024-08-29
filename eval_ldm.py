@@ -65,10 +65,10 @@ def evaluate(config):
 
     if 'cfg' in config.sample and config.sample.cfg and config.sample.scale > 0:  # classifier free guidance
         logging.info(f'Use classifier free guidance with scale={config.sample.scale}')
-        def cfg_nnet(x, timesteps, y, layer):
-            _cond, inner, inner1, i = nnet(x, timesteps, y=y, layer=layer)
-            _uncond, _, _, _ = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device), layer=layer)
-            return _cond + config.sample.scale * (_cond - _uncond), inner, inner1, i
+        def cfg_nnet(x, timesteps, y, thres):
+            _cond, inner, lte = nnet(x, timesteps, y=y, thres=thres)
+            _uncond, _, _ = nnet(x, timesteps, y=torch.tensor([dataset.K] * x.size(0), device=device), thres=thres)
+            return _cond + config.sample.scale * (_cond - _uncond), inner, lte
         score_model = sde.ScoreModel(cfg_nnet, pred=config.pred, sde=sde.VPSDE())
     else:
         score_model = sde.ScoreModel(nnet, pred=config.pred, sde=sde.VPSDE())
@@ -85,6 +85,8 @@ def evaluate(config):
             kwargs = dict(y=dataset.sample_label(_n_samples, device=device))
         else:
             raise NotImplementedError
+
+        kwargs["thres"] = config.exit_threshold
 
         if config.sample.algorithm == 'euler_maruyama_sde':
             _z = sde.euler_maruyama(sde.ReverseSDE(score_model), _z_init, config.sample.sample_steps, verbose=accelerator.is_main_process, **kwargs)
@@ -134,12 +136,16 @@ config_flags.DEFINE_config_file(
 flags.mark_flags_as_required(["config"])
 flags.DEFINE_string("nnet_path", None, "The nnet to evaluate.")
 flags.DEFINE_string("output_path", None, "The path to output log.")
+flags.DEFINE_float("exit_threshold", 0.95, "The threshold for early exiting.")
+
+
 
 
 def main(argv):
     config = FLAGS.config
     config.nnet_path = FLAGS.nnet_path
     config.output_path = FLAGS.output_path
+    config.exit_threshold = FLAGS.exit_threshold
     evaluate(config)
 
 

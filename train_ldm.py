@@ -18,6 +18,7 @@ import builtins
 import os
 import wandb
 import libs.autoencoder
+from accelerate.utils import DistributedDataParallelKwargs
 
 
 def train(config):
@@ -26,7 +27,8 @@ def train(config):
         torch.backends.cudnn.deterministic = False
 
     mp.set_start_method('spawn')
-    accelerator = accelerate.Accelerator()
+    kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+    accelerator = accelerate.Accelerator(kwargs_handlers=[kwargs])
     device = accelerator.device
     accelerate.utils.set_seed(config.seed, device_specific=True)
     logging.info(f'Process {accelerator.process_index} using device: {device}')
@@ -92,10 +94,10 @@ def train(config):
         optimizer.zero_grad()
         if config.train.mode == 'uncond':
             _z = autoencoder.sample(_batch) if 'feature' in config.dataset.name else encode(_batch)
-            loss = sde.LSimple(score_model, _z, pred=config.pred, _step=_step)
+            loss = sde.LSimple(score_model, _z, pred=config.pred, _step=_step, is_train=config.is_train)
         elif config.train.mode == 'cond':
             _z = autoencoder.sample(_batch[0]) if 'feature' in config.dataset.name else encode(_batch[0])
-            loss = sde.LSimple(score_model, _z, pred=config.pred, y=_batch[1], _step=_step)
+            loss = sde.LSimple(score_model, _z, pred=config.pred, y=_batch[1], _step=_step, is_train=config.is_train)
         else:
             raise NotImplementedError(config.train.mode)
         _metrics['loss'] = accelerator.gather(loss.detach()).mean()
@@ -228,6 +230,8 @@ config_flags.DEFINE_config_file(
     "config", None, "Training configuration.", lock_config=False)
 flags.mark_flags_as_required(["config"])
 flags.DEFINE_string("workdir", None, "Work unit directory.")
+flags.DEFINE_bool("is_train", True, "Is train or not")
+flags.DEFINE_string("pretrained_weight", None, "Pretrained weight path")
 
 
 def get_config_name():
@@ -258,6 +262,8 @@ def main(argv):
     config = FLAGS.config
     config.config_name = get_config_name()
     config.hparams = get_hparams()
+    config.is_train = FLAGS.is_train
+    config.pretrained_weight = FLAGS.pretrained_weight
     config.workdir = FLAGS.workdir or os.path.join('workdir', config.config_name, config.hparams)
     config.ckpt_root = os.path.join(config.workdir, 'ckpts')
     config.sample_dir = os.path.join(config.workdir, 'samples')

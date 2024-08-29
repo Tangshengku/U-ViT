@@ -51,13 +51,13 @@ def evaluate(config):
     accelerator.unwrap_model(nnet).load_state_dict(torch.load(config.nnet_path, map_location='cpu'))
     nnet.eval()
 
-    def cfg_nnet(x, timesteps, context, layer):
-        _cond, _, _, _ = nnet(x, timesteps, context=context)
+    def cfg_nnet(x, timesteps, context, thres):
+        _cond, _, _ = nnet(x, timesteps, context=context, thres=thres)
         if config.sample.scale == 0:
             return _cond
         _empty_context = torch.tensor(dataset.empty_context, device=device)
         _empty_context = einops.repeat(_empty_context, 'L D -> B L D', B=x.size(0))
-        _uncond, _, _, _ = nnet(x, timesteps, layer=layer, context=_empty_context)
+        _uncond, _, _ = nnet(x, timesteps, context=_empty_context, thres=thres)
         return _cond + config.sample.scale * (_cond - _uncond)
 
     autoencoder = libs.autoencoder.get_model(**config.autoencoder)
@@ -101,10 +101,10 @@ def evaluate(config):
     def dpm_solver_sample(_n_samples, _sample_steps, **kwargs):
         _z_init = torch.randn(_n_samples, *config.z_shape, device=device)
         noise_schedule = NoiseScheduleVP(schedule='discrete', betas=torch.tensor(_betas, device=device).float())
-
-        def model_fn(x, t_continuous, layer):
+        kwargs["thres"] = config.exit_threshold
+    
+        def model_fn(x, t_continuous):
             t = t_continuous * N
-            kwargs["layer"] = layer
             return cfg_nnet(x, t, **kwargs)
 
         dpm_solver = DPM_Solver(model_fn, noise_schedule, predict_x0=True, thresholding=False)
@@ -114,7 +114,7 @@ def evaluate(config):
     def sample_fn(_n_samples):
         _context = next(context_generator)
         assert _context.size(0) == _n_samples
-        return dpm_solver_sample(_n_samples, config.sample.sample_steps, context=_context), _context
+        return dpm_solver_sample(_n_samples, config.sample.sample_steps, context=_context)
 
     with tempfile.TemporaryDirectory() as temp_path:
         path = config.sample.path or temp_path
@@ -139,12 +139,15 @@ config_flags.DEFINE_config_file(
 flags.mark_flags_as_required(["config"])
 flags.DEFINE_string("nnet_path", None, "The nnet to evaluate.")
 flags.DEFINE_string("output_path", None, "The path to output log.")
+flags.DEFINE_float("exit_threshold", 0.95, "The threshold for early exiting.")
+
 
 
 def main(argv):
     config = FLAGS.config
     config.nnet_path = FLAGS.nnet_path
     config.output_path = FLAGS.output_path
+    config.exit_threshold = FLAGS.exit_threshold
     evaluate(config)
 
 

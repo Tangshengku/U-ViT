@@ -18,6 +18,7 @@ import os
 import wandb
 import libs.autoencoder
 import numpy as np
+from sde import mos, mos_layer_wise, mos_lte
 
 
 def stable_diffusion_beta_schedule(linear_start=0.00085, linear_end=0.0120, n_timestep=1000):
@@ -46,52 +47,6 @@ def stp(s, ts: torch.Tensor):  # scalar tensor product
     return s.view(-1, *extra_dims) * ts
 
 
-def mos(a, start_dim=1):  # mean of square
-    return a.pow(2).flatten(start_dim=start_dim).mean(dim=-1)
-
-def mos_layer_wise(preds, ltes, noise):
-    loss = 0.0
-    layer = len(preds)
-    w = (layer + 1) * layer / 2
-    weights = torch.zeros(preds[0].shape[0], layer).to(preds[0].device)
-    for i, pred in enumerate(preds):
-        u_true = 1 - torch.tanh(torch.abs(pred - noise))
-        # weights[:, i] = mos(ltes[i] - u_true).view(u_true.shape[0], -1).mean(dim=-1)
-        weights[:, i] = ltes[i].view(u_true.shape[0], -1).mean()
-    weights = 1 / weights.sum(dim=-1, keepdim=True) * weights
-    for i, pred in enumerate(preds):
-        # interval_ratio = (torch.abs(pred - noise) / torch.abs(noise)).view(
-        #                                 pred.shape[0], -1).mean(1).unsqueeze(1).clone().detach().float()
-        # interval_ratio = interval_ratio / interval_ratio.sum(0)
-        # interval_ratio = (interval_ratio < 0.5).clone().detach().half()
-        # labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
-        # print(ltes[i].shape)
-        # print(mos(noise - pred).shape)
-        loss +=   weights[:, i] * mos(noise - pred)
-        # loss += 1 / (torch.abs((1 - weights[:, i]) - 0.1) + 0.001)  * mos(noise - pred)
-    # print("layer-wise loss:", weights)
-    return loss
-
-def mos_lte(preds, ltes, noise):
-    loss = 0.0
-    layer = len(preds)
-    w = (layer + 1) * layer / 2
-    for i, pred in enumerate(preds):
-        u_true = 1 - torch.tanh(torch.abs(pred - noise)).detach()
-        loss += 1 / len(preds) * mos(ltes[i] - u_true)
-        # interval_ratio = (torch.abs(pred - noise) / noise).view(
-        #                                 pred.shape[0], -1).mean(1).unsqueeze(1)
-        # interval_ratio = (interval_ratio < 0.1).clone().detach().half()
-        # labels = torch.concat([interval_ratio, 1-interval_ratio], dim=1).detach()
-        # pos_num = torch.count_nonzero(interval_ratio.view(-1))
-        # neg_num = interval_ratio.shape[0] - pos_num
-
-        # pos_weight = 1 - (pos_num / interval_ratio.shape[0])
-        # neg_weight = 1 - (neg_num / interval_ratio.shape[0])
-        # weight = torch.concat([pos_weight.view(-1), neg_weight.view(-1)], dim=0)
-        # loss += torch.nn.functional.cross_entropy(ltes[i], labels, weight=weight)
-    # print("lte loss:", ltes[i])
-    return loss
 
 
 class Schedule(object):  # discrete time
@@ -131,7 +86,7 @@ class Schedule(object):  # discrete time
 
 def LSimple(x0, nnet, schedule, **kwargs):
     n, eps, xn = schedule.sample(x0)  # n in {1, ..., 1000}
-    eps_pred, inner_pred, lte, _ = nnet(xn, n, **kwargs)
+    eps_pred, inner_pred, lte = nnet(xn, n, **kwargs)
     return mos(eps - eps_pred) + mos_lte(inner_pred, lte, eps) + mos_layer_wise(inner_pred, lte, eps)
 
 
@@ -329,6 +284,8 @@ config_flags.DEFINE_config_file(
     "config", None, "Training configuration.", lock_config=False)
 flags.mark_flags_as_required(["config"])
 flags.DEFINE_string("workdir", None, "Work unit directory.")
+flags.DEFINE_bool("is_train", True, "Is train or not")
+flags.DEFINE_string("pretrained_weight", None, "Pretrained weight path")
 
 
 def get_config_name():
@@ -359,7 +316,9 @@ def main(argv):
     config = FLAGS.config
     config.config_name = get_config_name()
     config.hparams = get_hparams()
-    config.workdir = FLAGS.workdir or os.path.join('/data/tsk/diff/workdir', config.config_name, config.hparams)
+    config.is_train = FLAGS.is_train
+    config.pretrained_weight = FLAGS.pretrained_weight
+    config.workdir = FLAGS.workdir or os.path.join('./workdir', config.config_name, config.hparams)
     config.ckpt_root = os.path.join(config.workdir, 'ckpts')
     config.sample_dir = os.path.join(config.workdir, 'samples')
     train(config)

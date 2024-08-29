@@ -8,5 +8,7 @@ train_script=train.py  # the train script, one of <train.py|train_ldm.py|train_l
 config=configs/imagenet256_uvit_large.py  # the training configuration
                                       # you can change other hyperparameters by modifying the configuration file
 
+pretrained_weight=/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/imagenet256_uvit_large.pth
 # launch training
-accelerate launch --multi_gpu --num_processes 4 --mixed_precision fp16 train_ldm.py --config=configs/imagenet256_uvit_large.py
+accelerate launch --multi_gpu --num_processes 4 --mixed_precision fp16 train_ldm.py\
+     --config=configs/imagenet256_uvit_large.py --is_train=True --pretrained_weight=${pretrained_weight}

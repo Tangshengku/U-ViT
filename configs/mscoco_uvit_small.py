@@ -11,9 +11,10 @@ def get_config():
 
     config.seed = 1234
     config.z_shape = (4, 32, 32)
+    config.exit_threshold = 0.9
 
     config.autoencoder = d(
-        pretrained_path='assets/stable-diffusion/autoencoder_kl.pth',
+        pretrained_path='/home/dongk/dkgroup/tsk/projects/U-ViT/assets/stable-diffusion/autoencoder_kl.pth',
         scale_factor=0.23010
     )
 
@@ -54,7 +55,7 @@ def get_config():
 
     config.dataset = d(
         name='mscoco256_features',
-        path='/data/tsk/diff/coco256_features',
+        path='/home/dongk/dkgroup/tsk/projects/data/coco256_features',
         cfg=True,
         p_uncond=0.1
     )
@@ -62,10 +63,10 @@ def get_config():
     config.sample = d(
         sample_steps=50,
         n_samples=50000,
-        mini_batch_size=100,
+        mini_batch_size=1,
         cfg=True,
         scale=1.,
-        path='/data/tsk/diff/workdir/mscoco_uvit_small/default/ckpts/330000.ckpt/images'
+        path=''
     )
 
     return config

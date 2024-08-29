@@ -7,6 +7,7 @@ train_script=train.py  # the train script, one of <train.py|train_ldm.py|train_l
                        # train_t2i_discrete.py: text-to-image training on latent space
 config=configs/cifar10_uvit_small.py  # the training configuration
                                       # you can change other hyperparameters by modifying the configuration file
-
+pretrained_weight=/home/dongk/dkgroup/tsk/projects/U-ViT/ckpt/cifar10_uvit_small.pth
 # launch training
-accelerate launch --multi_gpu --num_processes $num_processes --mixed_precision fp16 $train_script --config=$config 
+accelerate launch --multi_gpu --num_processes $num_processes --mixed_precision fp16 \
+    $train_script --config=$config --is_train=True --pretrained_weight=${pretrained_weight}

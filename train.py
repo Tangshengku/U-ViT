@@ -215,7 +215,8 @@ config_flags.DEFINE_config_file(
     "config", None, "Training configuration.", lock_config=False)
 flags.mark_flags_as_required(["config"])
 flags.DEFINE_string("workdir", None, "Work unit directory.")
-
+flags.DEFINE_bool("is_train", True, "Is train or not")
+flags.DEFINE_string("pretrained_weight", None, "Pretrained weight path")
 
 def get_config_name():
     argv = sys.argv
@@ -245,7 +246,9 @@ def main(argv):
     config = FLAGS.config
     config.config_name = get_config_name()
     config.hparams = get_hparams()
-    config.workdir = FLAGS.workdir or os.path.join('/data/tsk/diff/workdir', config.config_name, config.hparams)
+    config.is_train = FLAGS.is_train
+    config.pretrained_weight = FLAGS.pretrained_weight
+    config.workdir = FLAGS.workdir or os.path.join('./workdir', config.config_name, config.hparams)
     config.ckpt_root = os.path.join(config.workdir, 'ckpts')
     config.sample_dir = os.path.join(config.workdir, 'samples')
     train(config)

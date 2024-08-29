@@ -12,9 +12,10 @@ def get_config():
     config.seed = 1234
     config.pred = 'noise_pred'
     config.z_shape = (4, 32, 32)
+    config.exit_threshold = 0.9
 
     config.autoencoder = d(
-        pretrained_path='assets/stable-diffusion/autoencoder_kl.pth'
+        pretrained_path='/home/dongk/dkgroup/tsk/projects/U-ViT/assets/stable-diffusion/autoencoder_kl.pth'
     )
 
     config.train = d(
@@ -22,8 +23,8 @@ def get_config():
         batch_size=1024,
         mode='cond',
         log_interval=10,
-        eval_interval=10000,
-        save_interval=10000,
+        eval_interval=10,
+        save_interval=10,
     )
 
     config.optimizer = d(
@@ -55,16 +56,16 @@ def get_config():
 
     config.dataset = d(
         name='imagenet256_features',
-        path='assets/datasets/imagenet256_features',
+        path='/home/dongk/dkgroup/tsk/projects/U-ViT/assets/datasets/imagenet256_features',
         cfg=True,
         p_uncond=0.15
     )
 
     config.sample = d(
-        sample_steps=1000,
-        n_samples=1,
+        sample_steps=50,
+        n_samples=50000,
         mini_batch_size=1,  # the decoder is large
-        algorithm='euler_maruyama_sde',
+        algorithm='dpm_solver',
         cfg=True,
         scale=0.4,
         path=''

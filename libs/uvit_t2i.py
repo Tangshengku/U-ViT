@@ -236,7 +236,7 @@ class UViT(nn.Module):
             save_image(x, path + "{}.png".format(i))
         return x
     
-    def forward(self, x, timesteps, context, is_train=True, layer=13, thres=0.8):
+    def forward(self, x, timesteps, context, is_train=False, thres=1.0):
         x = self.patch_embed(x)
         B, L, D = x.shape
 
@@ -257,51 +257,34 @@ class UViT(nn.Module):
             inner_state.append(self.output_forward(x, L))
             lte_val = self.lte(x, L, i)
             lte.append(lte_val)
-            # print(layer)
-            # if i == layer - 1:
-            #     return self.output_forward(x, L), inner_state, lte, j+1
             
             if not is_train:
-                # print(torch.mean(lte_val.view(-1)))
                 if torch.mean(lte_val.view(-1)) > thres:
                     # if patient[-1] == 1 :
-                    j += i 
-                    with open("layer.txt", "a") as f:
-                        f.write(str(j+1) + "\n")
-                    return self.output_forward(x, L), inner_state, lte, j+1
-                    # patient.append(1)
+                        # j += i 
+                    return self.output_forward(x, L), inner_state, lte
 
         x = self.mid_block(x)
         inner_state.append(self.output_forward(x, L))
-        lte_val = self.lte(x, L, 6)
+        lte_val = self.lte(x, L, len(self.in_blocks))
         lte.append(lte_val)
         
         if not is_train:
             if torch.mean(lte_val.view(-1)) > thres:
-                # if patient[-1] == 1 :
                 j += 1
-                with open("layer.txt", "a") as f:
-                    f.write(str(j+1) + "\n")
-                return self.output_forward(x, L), inner_state, lte, j+1
-                # patient.append(1)
+                return self.output_forward(x, L), inner_state, lte
 
         for i, blk in enumerate(self.out_blocks):
             x = blk(x, skips.pop())
             inner_state.append(self.output_forward(x, L))
-            lte_val = self.lte(x, L, i + 7)
+            lte_val = self.lte(x, L, i + len(self.in_blocks) + 1)
             lte.append(lte_val)
             
             if not is_train:
                 if torch.mean(lte_val.view(-1)) > thres:
-                    # if patient[-1] == 1:
                     j += i 
-                    with open("layer.txt", "a") as f:
-                        f.write(str(j+1) + "\n")
-                    return self.output_forward(x, L), inner_state, lte, j+1
-                    # patient.append(1)
+                    return self.output_forward(x, L), inner_state, lte
 
         j += i + 1
-        # with open("layer.txt", "a") as f:
-        #                 f.write(str(13) + "\n")
         x = self.output_forward(x, L)
-        return x, inner_state, lte, j
+        return x, inner_state, lte

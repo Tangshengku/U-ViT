@@ -11,6 +11,7 @@ def get_config():
 
     config.seed = 1234
     config.pred = 'noise_pred'
+    config.exit_threshold = 0.9
 
     config.train = d(
         n_steps=200000,
@@ -55,7 +56,7 @@ def get_config():
     config.sample = d(
         sample_steps=1000,
         n_samples=50000,
-        mini_batch_size=1250,
+        mini_batch_size=1,
         algorithm='euler_maruyama_sde',
         path=""
     )
